@@ -41,16 +41,16 @@ export function SectionView({
   return (
     <div
       style={{
-        marginBottom: '8px',
+        marginBottom: '6px',
         backgroundColor: section.backgroundColor ?? '#1a1a2e',
-        borderRadius: '8px',
+        borderRadius: '4px',
         overflow: 'hidden',
       }}
     >
       {/* Section header */}
       <div
         style={{
-          padding: '8px 16px',
+          padding: '4px 12px',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
@@ -104,11 +104,11 @@ export function SectionView({
       {/* Chunk flow layout */}
       <div
         style={{
-          padding: '8px 12px',
+          padding: '4px 6px',
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'flex-start',
-          minHeight: '80px',
+          minHeight: '32px',
         }}
       >
         {chunks.length === 0 ? (

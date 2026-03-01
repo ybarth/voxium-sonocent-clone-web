@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react';
 import {
   Mic, MicOff, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
+  ZoomIn, ZoomOut
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
@@ -45,6 +46,12 @@ export function Toolbar() {
     if (selectedIds.length >= 2) {
       mergeChunks(selectedIds);
     }
+  };
+
+  const handleZoom = (direction: 'in' | 'out') => {
+    const currentZoom = project.settings.zoomLevel ?? 1.0;
+    const nextZoom = direction === 'in' ? currentZoom * 1.2 : currentZoom / 1.2;
+    updateSettings({ zoomLevel: Math.max(0.2, Math.min(5, nextZoom)) });
   };
 
   const handleRecordToggle = () => {
@@ -226,6 +233,23 @@ export function Toolbar() {
               project.settings.visualMode === 'waveform' ? 'flat' : 'waveform',
           })
         }
+      />
+
+      <Divider />
+
+      {/* Zoom */}
+      <ToolbarButton
+        icon={<ZoomOut size={14} />}
+        label="Out"
+        onClick={() => handleZoom('out')}
+      />
+      <div style={{ fontSize: '10px', color: '#606070', minWidth: '30px', textAlign: 'center' }}>
+        {Math.round((project.settings.zoomLevel ?? 1.0) * 100)}%
+      </div>
+      <ToolbarButton
+        icon={<ZoomIn size={14} />}
+        label="In"
+        onClick={() => handleZoom('in')}
       />
 
       {/* Spacer */}

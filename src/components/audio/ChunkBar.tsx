@@ -13,10 +13,10 @@ interface ChunkBarProps {
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
 }
 
-const PX_PER_SECOND = 40;
-const MIN_WIDTH = 30;
-const MAX_WIDTH = 600;
-const BAR_HEIGHT = 64;
+const BASE_PX_PER_SECOND = 12;
+const MIN_WIDTH = 15;
+const MAX_WIDTH = 800;
+const BASE_BAR_HEIGHT = 24;
 
 export function ChunkBar({
   chunk,
@@ -29,11 +29,16 @@ export function ChunkBar({
 }: ChunkBarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const visualMode = useProjectStore((s) => s.project.settings.visualMode);
-  const numberDisplay = useProjectStore((s) => s.project.settings.chunkNumberDisplay);
+  const settings = useProjectStore((s) => s.project.settings);
+  const visualMode = settings.visualMode;
+  const numberDisplay = settings.chunkNumberDisplay;
+  const zoomLevel = settings.zoomLevel ?? 1.0;
+
+  const currentPxPerSecond = BASE_PX_PER_SECOND * zoomLevel;
+  const currentBarHeight = BASE_BAR_HEIGHT * zoomLevel;
 
   const duration = chunk.endTime - chunk.startTime;
-  const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, duration * PX_PER_SECOND));
+  const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, duration * currentPxPerSecond));
   const color = chunk.color ?? DEFAULT_CHUNK_COLOR;
 
   const bgColor = useMemo(() => {
@@ -61,20 +66,20 @@ export function ChunkBar({
 
     const dpr = window.devicePixelRatio || 1;
     canvas.width = width * dpr;
-    canvas.height = BAR_HEIGHT * dpr;
+    canvas.height = currentBarHeight * dpr;
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, BAR_HEIGHT);
+    ctx.clearRect(0, 0, width, currentBarHeight);
 
     const peaks = chunk.waveformData;
     const barWidth = width / peaks.length;
-    const mid = BAR_HEIGHT / 2;
+    const mid = currentBarHeight / 2;
 
     ctx.fillStyle = color;
     for (let i = 0; i < peaks.length; i++) {
-      const h = Math.max(2, peaks[i] * mid * 0.9);
-      ctx.fillRect(i * barWidth, mid - h, barWidth * 0.8, h * 2);
+      const h = Math.max(1, peaks[i] * mid * 0.8);
+      ctx.fillRect(i * barWidth, mid - h, Math.max(1, barWidth * 0.8), h * 2);
     }
-  }, [chunk.waveformData, width, color, visualMode]);
+  }, [chunk.waveformData, width, color, visualMode, currentBarHeight]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -105,23 +110,22 @@ export function ChunkBar({
       onClick={handleClick}
       style={{
         width: `${width}px`,
-        height: `${BAR_HEIGHT}px`,
+        height: `${currentBarHeight}px`,
         backgroundColor: visualMode === 'flat' ? color : bgColor,
-        borderRadius: '6px',
+        borderRadius: `${3 * zoomLevel}px`,
         position: 'relative',
         cursor: 'text', // I-beam cursor for precise placement
-        margin: '3px',
+        margin: `${2 * zoomLevel}px`,
         display: 'inline-block',
         verticalAlign: 'top',
-        transition: 'transform 0.15s, box-shadow 0.15s',
-        transform: isCurrent ? 'scale(1.02)' : 'none',
+        transition: 'transform 0.15s, box-shadow 0.15s, width 0.1s, height 0.1s',
+        transform: isCurrent ? 'scale(1.05)' : 'none',
         boxShadow: isSelected
-          ? `0 0 0 2.5px #3B82F6, 0 0 8px rgba(59,130,246,0.4)`
-          : '0 1px 3px rgba(0,0,0,0.15)',
+          ? `0 0 0 ${2 * zoomLevel}px #3B82F6, 0 0 ${6 * zoomLevel}px rgba(59,130,246,0.4)`
+          : `0 ${1 * zoomLevel}px ${2 * zoomLevel}px rgba(0,0,0,0.1)`,
         overflow: 'hidden',
         userSelect: 'none',
-        // Prominent selection indicator: bright blue ring + glow
-        outline: isSelected ? 'none' : 'none',
+        zIndex: isCurrent ? 10 : 1,
       }}
     >
       {/* Selection overlay — light blue tint */}
@@ -131,7 +135,7 @@ export function ChunkBar({
             position: 'absolute',
             inset: 0,
             backgroundColor: 'rgba(59, 130, 246, 0.15)',
-            borderRadius: '6px',
+            borderRadius: `${3 * zoomLevel}px`,
             zIndex: 0,
             pointerEvents: 'none',
           }}
@@ -144,7 +148,7 @@ export function ChunkBar({
           ref={canvasRef}
           style={{
             width: `${width}px`,
-            height: `${BAR_HEIGHT}px`,
+            height: `${currentBarHeight}px`,
             position: 'absolute',
             top: 0,
             left: 0,
@@ -160,10 +164,10 @@ export function ChunkBar({
             position: 'absolute',
             top: 0,
             left: `${cursorPosition * 100}%`,
-            width: '2px',
+            width: `${Math.max(1, 2 * zoomLevel)}px`,
             height: '100%',
             backgroundColor: '#F59E0B', // Amber — highly visible
-            boxShadow: '0 0 6px rgba(245,158,11,0.8)',
+            boxShadow: `0 0 ${4 * zoomLevel}px rgba(245,158,11,0.8)`,
             zIndex: 3,
             transition: 'left 0.03s linear',
             pointerEvents: 'none',
@@ -176,12 +180,12 @@ export function ChunkBar({
         <div
           style={{
             position: 'absolute',
-            top: '3px',
-            left: '5px',
-            fontSize: '10px',
+            top: `${1 * zoomLevel}px`,
+            left: `${3 * zoomLevel}px`,
+            fontSize: `${Math.max(6, 9 * zoomLevel)}px`,
             fontWeight: 700,
             color: contrastColor,
-            opacity: 0.7,
+            opacity: 0.8,
             zIndex: 1,
             lineHeight: 1,
             pointerEvents: 'none',
@@ -191,21 +195,24 @@ export function ChunkBar({
         </div>
       )}
 
-      {/* Duration label */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '3px',
-          right: '5px',
-          fontSize: '9px',
-          color: contrastColor,
-          opacity: 0.5,
-          zIndex: 1,
-          pointerEvents: 'none',
-        }}
-      >
-        {duration.toFixed(1)}s
-      </div>
+      {/* Duration label - only show if width allows */}
+      {width > 40 * zoomLevel && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: `${1 * zoomLevel}px`,
+            right: `${3 * zoomLevel}px`,
+            fontSize: `${Math.max(5, 8 * zoomLevel)}px`,
+            color: contrastColor,
+            opacity: 0.6,
+            zIndex: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          {duration.toFixed(1)}s
+        </div>
+      )}
     </div>
+
   );
 }

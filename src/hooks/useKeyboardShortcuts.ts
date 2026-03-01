@@ -55,6 +55,25 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // Zoom: Ctrl/Cmd + + / - / 0
+      if (ctrl && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        const nextZoom = (project.settings.zoomLevel ?? 1.0) * 1.2;
+        state.updateSettings({ zoomLevel: Math.max(0.2, Math.min(5, nextZoom)) });
+        return;
+      }
+      if (ctrl && e.key === '-') {
+        e.preventDefault();
+        const nextZoom = (project.settings.zoomLevel ?? 1.0) / 1.2;
+        state.updateSettings({ zoomLevel: Math.max(0.2, Math.min(5, nextZoom)) });
+        return;
+      }
+      if (ctrl && e.key === '0') {
+        e.preventDefault();
+        state.updateSettings({ zoomLevel: 1.0 });
+        return;
+      }
+
       // Non-audio-pane: only Space
       if (selection.focusedPaneId !== 'audio') {
         if (e.code === 'Space') {

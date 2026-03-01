@@ -57,6 +57,7 @@ export interface ColorKeyEntry {
 export interface ProjectSettings {
   playbackSpeed: number;
   volume: number;
+  zoomLevel: number;
   visualMode: 'waveform' | 'flat';
   chunkNumberDisplay: 'section-relative' | 'document-relative' | 'both' | 'hidden';
   silenceThresholdDb: number;
@@ -102,6 +103,7 @@ export const DEFAULT_CHUNK_COLOR = '#D1D5DB';
 export const DEFAULT_SETTINGS: ProjectSettings = {
   playbackSpeed: 1.0,
   volume: 1.0,
+  zoomLevel: 1.0,
   visualMode: 'waveform',
   chunkNumberDisplay: 'section-relative',
   silenceThresholdDb: -40,
