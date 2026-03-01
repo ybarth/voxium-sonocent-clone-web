@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import type {
   Project, Chunk, Section, AudioBufferRef, ProjectSettings,
-  UndoAction,
+  UndoAction, InsertionPoint, TakeState,
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS } from '../types';
 
@@ -18,6 +18,9 @@ interface PlaybackState {
   currentChunkId: string | null;
   cursorTime: number;
   cursorPositionInChunk: number; // 0-1 within current chunk
+  insertionPoint: InsertionPoint | null;
+  /** Separate from insertionPoint — tracks where the recording head is during live recording */
+  recordingHead: InsertionPoint | null;
 }
 
 interface SelectionState {
@@ -30,6 +33,7 @@ interface ProjectStore {
   project: Project;
   playback: PlaybackState;
   selection: SelectionState;
+  take: TakeState;
 
   audioContext: AudioContext | null;
   initAudioContext: () => AudioContext;
@@ -61,11 +65,21 @@ interface ProjectStore {
   clearSelection: () => void;
   setFocusedPane: (pane: SelectionState['focusedPaneId']) => void;
 
+  // Insertion point & take
+  placeCursorAtInsertionPoint: (sectionId: string, orderIndex: number) => void;
+  bumpChunksForInsertion: (sectionId: string, fromOrderIndex: number, offset: number) => void;
+  renumberSection: (sectionId: string) => void;
+  setTakeChunkIds: (ids: string[], originalSectionId: string, startOrderIndex: number) => void;
+  clearTake: () => void;
+  moveTakeToPosition: (sectionId: string, orderIndex: number) => void;
+  moveTakeBack: () => void;
+
   // Cursor placement
   /** Place cursor at a specific position within a chunk (fraction 0-1) */
   placeCursorInChunk: (chunkId: string, fraction: number) => void;
   setPlaying: (playing: boolean) => void;
   setRecording: (recording: boolean) => void;
+  setRecordingHead: (head: InsertionPoint | null) => void;
   setCurrentChunk: (id: string | null) => void;
   setCursorTime: (time: number) => void;
   setCursorPositionInChunk: (pos: number) => void;
@@ -127,7 +141,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     currentChunkId: null,
     cursorTime: 0,
     cursorPositionInChunk: 0,
+    insertionPoint: null,
+    recordingHead: null,
   },
+
+  take: { chunkIds: [], originalPosition: null, moved: false },
 
   selection: {
     selectedChunkIds: new Set(),
@@ -213,6 +231,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date(),
       },
       selection: { ...s.selection, selectedChunkIds: new Set(), anchorChunkId: null },
+      playback: { ...s.playback, insertionPoint: null },
     }));
   },
 
@@ -282,6 +301,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           ...s.playback,
           currentChunkId: chunk2.id,
           cursorPositionInChunk: 0,
+          insertionPoint: null,
         },
         selection: {
           ...s.selection,
@@ -324,6 +344,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       return {
         project: { ...s.project, chunks: newChunks, updatedAt: new Date() },
         selection: { ...s.selection, selectedChunkIds: new Set([merged.id]), anchorChunkId: merged.id },
+        playback: { ...s.playback, insertionPoint: null },
       };
     });
   },
@@ -338,8 +359,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       backgroundColor: null,
     };
     store.pushUndo('add-section');
+    const isRecording = store.playback.isRecording;
     set((s) => ({
       project: { ...s.project, sections: [...s.project.sections, section], updatedAt: new Date() },
+      // During recording, redirect both insertion point and recording head to the new section
+      ...(isRecording ? {
+        playback: {
+          ...s.playback,
+          insertionPoint: { sectionId: section.id, orderIndex: 0 },
+          recordingHead: { sectionId: section.id, orderIndex: 0 },
+          currentChunkId: null,
+        },
+      } : {}),
     }));
     return section;
   },
@@ -449,6 +480,122 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   setFocusedPane: (pane) =>
     set((s) => ({ selection: { ...s.selection, focusedPaneId: pane } })),
 
+  // --- Insertion point & take ---
+  placeCursorAtInsertionPoint: (sectionId, orderIndex) =>
+    set((s) => ({
+      playback: {
+        ...s.playback,
+        currentChunkId: null,
+        insertionPoint: { sectionId, orderIndex },
+      },
+    })),
+
+  bumpChunksForInsertion: (sectionId, fromOrderIndex, offset) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          c.sectionId === sectionId && !c.isDeleted && c.orderIndex >= fromOrderIndex
+            ? { ...c, orderIndex: c.orderIndex + offset }
+            : c
+        ),
+        updatedAt: new Date(),
+      },
+    })),
+
+  renumberSection: (sectionId) =>
+    set((s) => {
+      const sectionChunks = s.project.chunks
+        .filter((c) => c.sectionId === sectionId && !c.isDeleted)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+      const idToNewIndex = new Map(sectionChunks.map((c, i) => [c.id, i]));
+      return {
+        project: {
+          ...s.project,
+          chunks: s.project.chunks.map((c) => {
+            const newIdx = idToNewIndex.get(c.id);
+            return newIdx !== undefined ? { ...c, orderIndex: newIdx } : c;
+          }),
+          updatedAt: new Date(),
+        },
+      };
+    }),
+
+  setTakeChunkIds: (ids, originalSectionId, startOrderIndex) =>
+    set({ take: { chunkIds: ids, originalPosition: { sectionId: originalSectionId, startOrderIndex }, moved: false } }),
+
+  clearTake: () =>
+    set({ take: { chunkIds: [], originalPosition: null, moved: false } }),
+
+  moveTakeToPosition: (sectionId, orderIndex) => {
+    const { take, project } = get();
+    if (take.chunkIds.length === 0) return;
+    get().pushUndo('move-take');
+    set((s) => {
+      // First remove take chunks from their current section order
+      const takeIds = new Set(s.take.chunkIds);
+      let chunks = s.project.chunks.map((c) => {
+        if (takeIds.has(c.id)) return { ...c, sectionId, orderIndex: -1 };
+        return c;
+      });
+
+      // Renumber the target section excluding take chunks, then insert take chunks at orderIndex
+      const targetNonTake = chunks
+        .filter((c) => c.sectionId === sectionId && !c.isDeleted && !takeIds.has(c.id))
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+
+      // Clamp orderIndex
+      const clampedIdx = Math.min(orderIndex, targetNonTake.length);
+
+      // Build final ordering: before + take + after
+      const before = targetNonTake.slice(0, clampedIdx);
+      const after = targetNonTake.slice(clampedIdx);
+      const takeChunks = chunks.filter((c) => takeIds.has(c.id) && !c.isDeleted);
+
+      const finalOrder = [...before, ...takeChunks, ...after];
+      const idToIdx = new Map(finalOrder.map((c, i) => [c.id, i]));
+
+      chunks = chunks.map((c) => {
+        const idx = idToIdx.get(c.id);
+        return idx !== undefined ? { ...c, orderIndex: idx, sectionId } : c;
+      });
+
+      // Also renumber any section that lost chunks (the old section)
+      // We'll do a full renumber pass for all sections that had take chunks
+      const affectedSections = new Set<string>();
+      for (const c of s.project.chunks) {
+        if (takeIds.has(c.id)) affectedSections.add(c.sectionId);
+      }
+      affectedSections.add(sectionId);
+
+      for (const secId of affectedSections) {
+        const secChunks = chunks
+          .filter((c) => c.sectionId === secId && !c.isDeleted)
+          .sort((a, b) => a.orderIndex - b.orderIndex);
+        const secMap = new Map(secChunks.map((c, i) => [c.id, i]));
+        chunks = chunks.map((c) => {
+          const ni = secMap.get(c.id);
+          return ni !== undefined ? { ...c, orderIndex: ni } : c;
+        });
+      }
+
+      return {
+        project: { ...s.project, chunks, updatedAt: new Date() },
+        take: { ...s.take, moved: true },
+      };
+    });
+  },
+
+  moveTakeBack: () => {
+    const { take, project } = get();
+    if (!take.originalPosition) return;
+    // Check if original section still exists
+    const sectionExists = project.sections.some((s) => s.id === take.originalPosition!.sectionId);
+    if (!sectionExists) return;
+    get().moveTakeToPosition(take.originalPosition.sectionId, take.originalPosition.startOrderIndex);
+    set((s) => ({ take: { ...s.take, moved: false } }));
+  },
+
   // --- Cursor placement ---
   placeCursorInChunk: (chunkId, fraction) => {
     const chunk = get().project.chunks.find((c) => c.id === chunkId);
@@ -460,6 +607,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         currentChunkId: chunkId,
         cursorPositionInChunk: Math.max(0, Math.min(1, fraction)),
         cursorTime: chunk.startTime + duration * fraction,
+        insertionPoint: {
+          sectionId: chunk.sectionId,
+          orderIndex: fraction < 0.5 ? chunk.orderIndex : chunk.orderIndex + 1,
+        },
       },
     }));
   },
@@ -468,7 +619,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set((s) => ({ playback: { ...s.playback, isPlaying } })),
 
   setRecording: (isRecording) =>
-    set((s) => ({ playback: { ...s.playback, isRecording } })),
+    set((s) => ({
+      playback: { ...s.playback, isRecording, ...(!isRecording ? { recordingHead: null } : {}) },
+    })),
+
+  setRecordingHead: (head) =>
+    set((s) => ({ playback: { ...s.playback, recordingHead: head } })),
 
   setCurrentChunk: (id) =>
     set((s) => ({ playback: { ...s.playback, currentChunkId: id } })),
@@ -633,6 +789,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           ],
           updatedAt: new Date(),
         },
+        take: { chunkIds: [], originalPosition: null, moved: false },
       };
     }),
 
@@ -660,6 +817,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           ],
           updatedAt: new Date(),
         },
+        take: { chunkIds: [], originalPosition: null, moved: false },
       };
     }),
 }));

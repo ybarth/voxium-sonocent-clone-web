@@ -11,6 +11,7 @@ interface ChunkBarProps {
   isCurrent: boolean;
   cursorPosition: number; // 0-1
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent, sectionId: string, orderIndex: number) => void;
 }
 
 const BASE_PX_PER_SECOND = 12;
@@ -26,6 +27,7 @@ export function ChunkBar({
   isCurrent,
   cursorPosition,
   onChunkClick,
+  onContextMenu,
 }: ChunkBarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -92,6 +94,15 @@ export function ChunkBar({
     [chunk.id, onChunkClick]
   );
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (onContextMenu) {
+        onContextMenu(e, chunk.sectionId, chunk.orderIndex + 1);
+      }
+    },
+    [chunk.sectionId, chunk.orderIndex, onContextMenu]
+  );
+
   const numberLabel = useMemo(() => {
     switch (numberDisplay) {
       case 'section-relative': return `${sectionChunkNumber}`;
@@ -108,6 +119,7 @@ export function ChunkBar({
     <div
       ref={barRef}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       style={{
         width: `${width}px`,
         height: `${currentBarHeight}px`,

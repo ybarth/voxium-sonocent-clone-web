@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import type { Section, Chunk } from '../../types';
+import { useState, useRef, useCallback } from 'react';
+import type { Section, Chunk, InsertionPoint } from '../../types';
 import { ChunkBar } from './ChunkBar';
 import { useProjectStore } from '../../stores/projectStore';
 
@@ -9,7 +9,9 @@ interface SectionViewProps {
   globalChunkOffset: number;
   currentChunkId: string | null;
   cursorPosition: number;
+  insertionPoint: InsertionPoint | null;
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent, sectionId: string, orderIndex: number) => void;
 }
 
 export function SectionView({
@@ -18,12 +20,17 @@ export function SectionView({
   globalChunkOffset,
   currentChunkId,
   cursorPosition,
+  insertionPoint,
   onChunkClick,
+  onContextMenu,
 }: SectionViewProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
   const renameSection = useProjectStore((s) => s.renameSection);
+  const placeCursorAtInsertionPoint = useProjectStore((s) => s.placeCursorAtInsertionPoint);
+  const recordingHead = useProjectStore((s) => s.playback.recordingHead);
+  const isRecording = useProjectStore((s) => s.playback.isRecording);
 
   const handleDoubleClick = () => {
     setIsEditingName(true);
@@ -36,7 +43,49 @@ export function SectionView({
     setIsEditingName(false);
   };
 
+  const handleEmptySpaceClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only trigger if click was on the container div itself, not a child chunk
+      if (e.target === e.currentTarget) {
+        placeCursorAtInsertionPoint(section.id, chunks.length);
+      }
+    },
+    [section.id, chunks.length, placeCursorAtInsertionPoint]
+  );
+
+  const handleFlowContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      // If right-click is on the empty space (not a chunk), use end-of-section
+      if (e.target === e.currentTarget) {
+        e.preventDefault();
+        onContextMenu(e, section.id, chunks.length);
+      }
+    },
+    [section.id, chunks.length, onContextMenu]
+  );
+
+  const handleChunkContextMenu = useCallback(
+    (e: React.MouseEvent, sectionId: string, orderIndex: number) => {
+      e.preventDefault();
+      onContextMenu(e, sectionId, orderIndex);
+    },
+    [onContextMenu]
+  );
+
   const selectedCount = chunks.filter((c) => selectedChunkIds.has(c.id)).length;
+
+  // During recording, show cursor at the recording head position.
+  // Otherwise, show user's insertion cursor (only when no chunk is focused).
+  const activeRecordingHead =
+    isRecording && recordingHead && recordingHead.sectionId === section.id
+      ? recordingHead
+      : null;
+  const activeInsertionPoint =
+    !isRecording && insertionPoint && insertionPoint.sectionId === section.id && !currentChunkId
+      ? insertionPoint
+      : null;
+  const cursorPoint = activeRecordingHead ?? activeInsertionPoint;
+  const showInsertionCursor = !!cursorPoint;
 
   return (
     <div
@@ -103,42 +152,100 @@ export function SectionView({
 
       {/* Chunk flow layout */}
       <div
+        onClick={handleEmptySpaceClick}
+        onContextMenu={handleFlowContextMenu}
         style={{
           padding: '4px 6px',
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'flex-start',
           minHeight: '32px',
+          cursor: 'text',
         }}
       >
         {chunks.length === 0 ? (
-          <div
-            style={{
-              color: '#505060',
-              fontSize: '12px',
-              fontStyle: 'italic',
-              padding: '20px',
-              width: '100%',
-              textAlign: 'center',
-            }}
-          >
-            No audio chunks. Import or record audio to get started.
-          </div>
+          showInsertionCursor ? (
+            <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', minHeight: '20px' }}>
+              <InsertionCursor />
+            </div>
+          ) : (
+            <div
+              style={{
+                color: '#505060',
+                fontSize: '12px',
+                fontStyle: 'italic',
+                padding: '20px',
+                width: '100%',
+                textAlign: 'center',
+                pointerEvents: 'none',
+              }}
+            >
+              No audio chunks. Import or record audio to get started.
+            </div>
+          )
         ) : (
           chunks.map((chunk, idx) => (
-            <ChunkBar
+            <InsertionWrapper
               key={chunk.id}
-              chunk={chunk}
-              chunkNumber={globalChunkOffset + idx + 1}
-              sectionChunkNumber={idx + 1}
-              isSelected={selectedChunkIds.has(chunk.id)}
-              isCurrent={chunk.id === currentChunkId}
-              cursorPosition={chunk.id === currentChunkId ? cursorPosition : 0}
-              onChunkClick={onChunkClick}
-            />
+              showBefore={
+                showInsertionCursor
+                  ? cursorPoint!.orderIndex === chunk.orderIndex
+                  : false
+              }
+            >
+              <ChunkBar
+                chunk={chunk}
+                chunkNumber={globalChunkOffset + idx + 1}
+                sectionChunkNumber={idx + 1}
+                isSelected={selectedChunkIds.has(chunk.id)}
+                isCurrent={chunk.id === currentChunkId}
+                cursorPosition={chunk.id === currentChunkId ? cursorPosition : 0}
+                onChunkClick={onChunkClick}
+                onContextMenu={handleChunkContextMenu}
+              />
+            </InsertionWrapper>
           ))
+        )}
+        {/* Insertion cursor at end of section (only when section has chunks — empty section handled above) */}
+        {showInsertionCursor && chunks.length > 0 && cursorPoint!.orderIndex >= chunks.length && (
+          <InsertionCursor />
         )}
       </div>
     </div>
+  );
+}
+
+function InsertionCursor() {
+  return (
+    <div
+      style={{
+        width: '2px',
+        height: '16px',
+        backgroundColor: '#F59E0B',
+        boxShadow: '0 0 6px rgba(245,158,11,0.8)',
+        borderRadius: '1px',
+        animation: 'blink 1s step-end infinite',
+        alignSelf: 'center',
+        margin: '0 1px',
+        flexShrink: 0,
+      }}
+    >
+      <style>{`@keyframes blink { 50% { opacity: 0; } }`}</style>
+    </div>
+  );
+}
+
+function InsertionWrapper({
+  children,
+  showBefore,
+}: {
+  children: React.ReactNode;
+  showBefore: boolean;
+}) {
+  return (
+    <>
+      {showBefore && <InsertionCursor />}
+      {children}
+    </>
   );
 }

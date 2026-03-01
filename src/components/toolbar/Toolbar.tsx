@@ -1,6 +1,6 @@
 import { useRef, useCallback } from 'react';
 import {
-  Mic, MicOff, Play, Pause, Square, SkipBack, SkipForward,
+  Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
   ZoomIn, ZoomOut
 } from 'lucide-react';
@@ -19,7 +19,7 @@ export function Toolbar() {
   const mergeChunks = useProjectStore((s) => s.mergeChunks);
 
   const { isPlaying, togglePlay, stop } = usePlayback();
-  const { isRecording, isPaused, level, startRecording, pauseRecording, resumeRecording, stopRecording } = useRecorder();
+  const { isRecording, level, startRecording, stopRecording } = useRecorder();
   const navigateChunk = useProjectStore((s) => s.navigateChunk);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,12 +55,10 @@ export function Toolbar() {
   };
 
   const handleRecordToggle = () => {
-    if (!isRecording) {
-      startRecording();
-    } else if (isPaused) {
-      resumeRecording();
+    if (isRecording) {
+      stopRecording();
     } else {
-      pauseRecording();
+      startRecording();
     }
   };
 
@@ -81,19 +79,12 @@ export function Toolbar() {
     >
       {/* Record */}
       <ToolbarButton
-        icon={isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-        label={isRecording ? (isPaused ? 'Resume' : 'Pause') : 'Record'}
+        icon={isRecording ? <Square size={16} /> : <Mic size={16} />}
+        label={isRecording ? 'Stop' : 'Record'}
         onClick={handleRecordToggle}
         active={isRecording}
-        danger={isRecording && !isPaused}
+        danger={isRecording}
       />
-      {isRecording && (
-        <ToolbarButton
-          icon={<Square size={14} />}
-          label="Stop Rec"
-          onClick={stopRecording}
-        />
-      )}
 
       {/* Level meter */}
       {isRecording && (

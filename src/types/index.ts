@@ -65,11 +65,23 @@ export interface ProjectSettings {
   minChunkDurationMs: number;
 }
 
+export interface InsertionPoint {
+  sectionId: string;
+  orderIndex: number;
+}
+
+export interface TakeState {
+  chunkIds: string[];
+  originalPosition: { sectionId: string; startOrderIndex: number } | null;
+  moved: boolean;
+}
+
 export type UndoActionType =
   | 'split'
   | 'merge'
   | 'delete'
   | 'move'
+  | 'move-take'
   | 'recolor'
   | 'add-section'
   | 'rename-section'

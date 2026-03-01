@@ -203,6 +203,7 @@ export class PlaybackEngine {
       this.animFrameId = null;
     }
     if (this.sourceNode) {
+      this.sourceNode.onended = null;
       try {
         this.sourceNode.stop();
         this.sourceNode.disconnect();

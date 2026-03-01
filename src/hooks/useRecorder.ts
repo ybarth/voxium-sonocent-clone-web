@@ -4,9 +4,14 @@ import { useProjectStore } from '../stores/projectStore';
 import { decodeAudioFile, segmentAudio } from '../utils/audioProcessing';
 import type { Chunk } from '../types';
 
+interface SectionSpan {
+  sectionId: string;
+  orderIndex: number;
+  startTime: number; // seconds into the recording
+}
+
 export function useRecorder() {
   const [isRecording, setIsRecording] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
   const [level, setLevel] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -15,15 +20,28 @@ export function useRecorder() {
   // Live chunk processing refs
   const liveBufferIdRef = useRef<string | null>(null);
   const processIntervalRef = useRef<number | null>(null);
-  const isPausedRef = useRef(false);
   const recordStartTimeRef = useRef(0);
-  const pausedDurationRef = useRef(0);
-  const pauseStartTimeRef = useRef(0);
+
+  // Insertion point refs — captured at recording start, synced via subscription
+  const insertionSectionRef = useRef<string>('');
+  const insertionOrderRef = useRef<number>(0);
+  const unsubInsertionPointRef = useRef<(() => void) | null>(null);
+
+  // Section history — tracks which section(s) this recording spans
+  const sectionHistoryRef = useRef<SectionSpan[]>([]);
+  // IDs of frozen (old section) live buffers to clean up at onstop
+  const frozenBufferIdsRef = useRef<string[]>([]);
+  // Time offset into the recording when the current section started
+  const sectionStartTimeRef = useRef(0);
 
   const cleanupLiveProcessing = useCallback(() => {
     if (processIntervalRef.current) {
       clearInterval(processIntervalRef.current);
       processIntervalRef.current = null;
+    }
+    if (unsubInsertionPointRef.current) {
+      unsubInsertionPointRef.current();
+      unsubInsertionPointRef.current = null;
     }
   }, []);
 
@@ -53,11 +71,42 @@ export function useRecorder() {
   }, []);
 
   const startRecording = useCallback(async () => {
+    const store = useProjectStore.getState();
+
+    // Clear any previous take
+    store.clearTake();
+
+    // Determine insertion point
+    const ip = store.playback.insertionPoint;
+    const project = store.project;
+    let sectionId: string;
+    let orderIndex: number;
+
+    if (ip) {
+      sectionId = ip.sectionId;
+      orderIndex = ip.orderIndex;
+    } else {
+      // Fallback: end of last section
+      sectionId = project.sections[project.sections.length - 1]?.id;
+      const existingCount = sectionId
+        ? project.chunks.filter((c) => c.sectionId === sectionId && !c.isDeleted).length
+        : 0;
+      orderIndex = existingCount;
+    }
+
+    // Bump existing chunks to make room
+    store.bumpChunksForInsertion(sectionId, orderIndex, 1000);
+
+    // Store in refs for live interval and onstop
+    insertionSectionRef.current = sectionId;
+    insertionOrderRef.current = orderIndex;
+    sectionStartTimeRef.current = 0;
+    sectionHistoryRef.current = [{ sectionId, orderIndex, startTime: 0 }];
+    frozenBufferIdsRef.current = [];
+
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     chunksRef.current = [];
-    isPausedRef.current = false;
     recordStartTimeRef.current = performance.now();
-    pausedDurationRef.current = 0;
 
     const mediaRecorder = new MediaRecorder(stream, {
       mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -70,27 +119,62 @@ export function useRecorder() {
     };
 
     // Create a live buffer ID to track live chunks
-    const liveBufferId = uuid();
-    liveBufferIdRef.current = liveBufferId;
+    liveBufferIdRef.current = uuid();
 
-    const ctx = useProjectStore.getState().initAudioContext();
+    const ctx = store.initAudioContext();
 
-    // Capture section info for live chunks
-    const project = useProjectStore.getState().project;
-    const sectionId = project.sections[project.sections.length - 1]?.id;
-    const existingCount = sectionId
-      ? project.chunks.filter(
-          (c) => c.sectionId === sectionId && !c.isDeleted
-        ).length
-      : 0;
-
-    // Track whether we've successfully used real segmentation
+    // Track whether we've successfully used real segmentation for the current section
     let usingRealSegments = false;
     let isProcessing = false;
 
+    // Subscribe to store changes to detect section redirects during recording
+    const unsubInsertionPoint = useProjectStore.subscribe((state) => {
+      const newSectionId = state.playback.insertionPoint?.sectionId;
+      if (newSectionId && newSectionId !== insertionSectionRef.current) {
+        // Update refs FIRST — this prevents recursive re-entry because
+        // the freeze below triggers another subscribe call, and if the ref
+        // isn't updated yet, the condition passes again causing an infinite loop.
+        const oldSectionId = insertionSectionRef.current;
+        insertionSectionRef.current = newSectionId;
+        insertionOrderRef.current = 0;
+
+        // Freeze old live chunks — rename their audioBufferId so future
+        // replaceLiveChunks calls won't touch them
+        const oldLiveBufferId = liveBufferIdRef.current!;
+        const frozenId = 'frozen-' + uuid();
+        const s = useProjectStore.getState();
+        const oldChunks = s.project.chunks
+          .filter((c) => c.audioBufferId === oldLiveBufferId && !c.isDeleted)
+          .map((c) => ({ ...c, audioBufferId: frozenId }));
+        s.replaceLiveChunks(oldLiveBufferId, oldChunks);
+        frozenBufferIdsRef.current.push(frozenId);
+
+        // New live buffer for the new section
+        liveBufferIdRef.current = uuid();
+
+        // Record section switch time and update history
+        const switchTime = (performance.now() - recordStartTimeRef.current) / 1000;
+        sectionStartTimeRef.current = switchTime;
+        sectionHistoryRef.current.push({
+          sectionId: newSectionId,
+          orderIndex: 0,
+          startTime: switchTime,
+        });
+
+        // Reset segmentation tracking for the new section
+        usingRealSegments = false;
+      }
+    });
+
+    // Set initial recording head
+    store.setRecordingHead({ sectionId, orderIndex });
+
     // Periodic live update every 300ms
     processIntervalRef.current = window.setInterval(async () => {
-      if (!sectionId || isPausedRef.current || isProcessing) return;
+      const curSection = insertionSectionRef.current;
+      const curLiveBufferId = liveBufferIdRef.current!;
+      const curSectionStart = sectionStartTimeRef.current;
+      if (!curSection || isProcessing) return;
       isProcessing = true;
 
       try {
@@ -101,14 +185,16 @@ export function useRecorder() {
               type: 'audio/webm',
             });
             const ab = await blob.arrayBuffer();
-            // slice(0) creates a copy since decodeAudioData may detach the buffer
             const decoded = await ctx.decodeAudioData(ab.slice(0));
 
+            // If section was redirected during async decode, skip this update
+            if (insertionSectionRef.current !== curSection) return;
+
             const settings = useProjectStore.getState().project.settings;
-            const liveChunks = segmentAudio(
+            const allChunks = segmentAudio(
               decoded,
-              liveBufferId,
-              sectionId,
+              curLiveBufferId,
+              curSection,
               {
                 silenceThresholdDb: settings.silenceThresholdDb,
                 minSilenceDurationMs: settings.minSilenceDurationMs,
@@ -116,13 +202,19 @@ export function useRecorder() {
               }
             );
 
+            // Only keep chunks that start at or after the current section's start time
+            const liveChunks = allChunks.filter((c) => c.startTime >= curSectionStart - 0.01);
+
             liveChunks.forEach((c, i) => {
-              c.orderIndex = existingCount + i;
+              c.orderIndex = insertionOrderRef.current + i;
             });
 
-            useProjectStore
-              .getState()
-              .replaceLiveChunks(liveBufferId, liveChunks);
+            const s = useProjectStore.getState();
+            s.replaceLiveChunks(curLiveBufferId, liveChunks);
+            s.setRecordingHead({
+              sectionId: curSection,
+              orderIndex: insertionOrderRef.current + liveChunks.length,
+            });
             usingRealSegments = true;
             return;
           } catch {
@@ -132,33 +224,36 @@ export function useRecorder() {
 
         // Fallback: show a single growing chunk based on elapsed time
         if (!usingRealSegments) {
-          const elapsed =
-            (performance.now() -
-              recordStartTimeRef.current -
-              pausedDurationRef.current) /
-            1000;
-          if (elapsed < 0.2) return;
+          const totalElapsed = (performance.now() - recordStartTimeRef.current) / 1000;
+          const sectionElapsed = totalElapsed - curSectionStart;
+          if (sectionElapsed < 0.2) return;
 
           const growingChunk: Chunk = {
             id: uuid(),
-            audioBufferId: liveBufferId,
-            startTime: 0,
-            endTime: elapsed,
-            sectionId,
-            orderIndex: existingCount,
+            audioBufferId: curLiveBufferId,
+            startTime: curSectionStart,
+            endTime: totalElapsed,
+            sectionId: curSection,
+            orderIndex: insertionOrderRef.current,
             color: null,
             isDeleted: false,
             waveformData: null,
           };
 
-          useProjectStore
-            .getState()
-            .replaceLiveChunks(liveBufferId, [growingChunk]);
+          const s = useProjectStore.getState();
+          s.replaceLiveChunks(curLiveBufferId, [growingChunk]);
+          s.setRecordingHead({
+            sectionId: curSection,
+            orderIndex: insertionOrderRef.current + 1,
+          });
         }
       } finally {
         isProcessing = false;
       }
     }, 300);
+
+    // Store unsubscribe for cleanup
+    unsubInsertionPointRef.current = unsubInsertionPoint;
 
     mediaRecorder.onstop = async () => {
       stopLevelMeter();
@@ -170,78 +265,96 @@ export function useRecorder() {
         type: 'audio/webm',
       });
 
-      const store = useProjectStore.getState();
-      const audioCtx = store.initAudioContext();
+      const currentStore = useProjectStore.getState();
+      const audioCtx = currentStore.initAudioContext();
       const bufRef = await decodeAudioFile(file, audioCtx);
-      store.addAudioBuffer(bufRef);
+      currentStore.addAudioBuffer(bufRef);
 
-      const currentProject = useProjectStore.getState().project;
-      const finalSectionId =
-        currentProject.sections[currentProject.sections.length - 1]?.id;
-
-      if (finalSectionId && bufRef.decodedBuffer) {
-        // Exclude live chunks when computing start index
-        const existingChunks = currentProject.chunks.filter(
-          (c) =>
-            c.sectionId === finalSectionId &&
-            !c.isDeleted &&
-            c.audioBufferId !== liveBufferIdRef.current
-        );
-        const startIndex = existingChunks.length;
-
-        const newChunks = segmentAudio(
+      if (bufRef.decodedBuffer) {
+        const currentProject = useProjectStore.getState().project;
+        const allSegments = segmentAudio(
           bufRef.decodedBuffer,
           bufRef.id,
-          finalSectionId,
+          '', // sectionId placeholder — will be assigned per-span
           {
             silenceThresholdDb: currentProject.settings.silenceThresholdDb,
-            minSilenceDurationMs:
-              currentProject.settings.minSilenceDurationMs,
+            minSilenceDurationMs: currentProject.settings.minSilenceDurationMs,
             minChunkDurationMs: currentProject.settings.minChunkDurationMs,
           }
         );
 
-        newChunks.forEach((c, i) => {
-          c.orderIndex = startIndex + i;
-        });
+        const history = sectionHistoryRef.current;
+        const finalChunks: Chunk[] = [];
 
-        // Atomically replace live chunks with final decoded chunks
-        useProjectStore
-          .getState()
-          .replaceLiveChunks(liveBufferIdRef.current!, newChunks);
-      } else if (liveBufferIdRef.current) {
-        // No final chunks, just remove live chunks
-        useProjectStore
-          .getState()
-          .replaceLiveChunks(liveBufferIdRef.current, []);
+        // Assign each segment to the correct section based on time spans
+        for (const chunk of allSegments) {
+          // Find which section span this chunk belongs to (by its start time)
+          let span = history[0];
+          for (let i = history.length - 1; i >= 0; i--) {
+            if (chunk.startTime >= history[i].startTime - 0.01) {
+              span = history[i];
+              break;
+            }
+          }
+          finalChunks.push({ ...chunk, sectionId: span.sectionId });
+        }
+
+        // Assign orderIndexes per section
+        const bySection = new Map<string, Chunk[]>();
+        for (const c of finalChunks) {
+          const arr = bySection.get(c.sectionId) ?? [];
+          arr.push(c);
+          bySection.set(c.sectionId, arr);
+        }
+        for (const [secId, chunks] of bySection) {
+          const span = history.find((h) => h.sectionId === secId);
+          const baseIndex = span?.orderIndex ?? 0;
+          chunks.forEach((c, i) => { c.orderIndex = baseIndex + i; });
+        }
+
+        // Remove all frozen chunks and current live chunks, then add final chunks
+        const s = useProjectStore.getState();
+        // Remove current live chunks
+        s.replaceLiveChunks(liveBufferIdRef.current!, []);
+        // Remove frozen chunks
+        for (const frozenId of frozenBufferIdsRef.current) {
+          s.replaceLiveChunks(frozenId, []);
+        }
+        // Add all final chunks
+        s.addChunks(finalChunks);
+
+        // Renumber all affected sections
+        for (const secId of bySection.keys()) {
+          useProjectStore.getState().renumberSection(secId);
+        }
+
+        // Set take state with all final chunk IDs
+        const allFinalIds = finalChunks.map((c) => c.id);
+        const firstSpan = history[0];
+        useProjectStore.getState().setTakeChunkIds(
+          allFinalIds,
+          firstSpan.sectionId,
+          firstSpan.orderIndex
+        );
+      } else {
+        // No final chunks, just remove all live/frozen chunks
+        if (liveBufferIdRef.current) {
+          useProjectStore.getState().replaceLiveChunks(liveBufferIdRef.current, []);
+        }
+        for (const frozenId of frozenBufferIdsRef.current) {
+          useProjectStore.getState().replaceLiveChunks(frozenId, []);
+        }
       }
+
+      useProjectStore.getState().setRecording(false);
     };
 
     mediaRecorder.start(100);
     mediaRecorderRef.current = mediaRecorder;
     setIsRecording(true);
-    setIsPaused(false);
+    store.setRecording(true);
     startLevelMeter(stream);
   }, [startLevelMeter, stopLevelMeter, cleanupLiveProcessing]);
-
-  const pauseRecording = useCallback(() => {
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.pause();
-      setIsPaused(true);
-      isPausedRef.current = true;
-      pauseStartTimeRef.current = performance.now();
-    }
-  }, []);
-
-  const resumeRecording = useCallback(() => {
-    if (mediaRecorderRef.current?.state === 'paused') {
-      mediaRecorderRef.current.resume();
-      setIsPaused(false);
-      isPausedRef.current = false;
-      pausedDurationRef.current +=
-        performance.now() - pauseStartTimeRef.current;
-    }
-  }, []);
 
   const stopRecording = useCallback(() => {
     if (
@@ -251,8 +364,6 @@ export function useRecorder() {
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
-    setIsPaused(false);
-    isPausedRef.current = false;
   }, []);
 
   // Cleanup on unmount
@@ -265,6 +376,9 @@ export function useRecorder() {
           .getState()
           .replaceLiveChunks(liveBufferIdRef.current, []);
       }
+      for (const frozenId of frozenBufferIdsRef.current) {
+        useProjectStore.getState().replaceLiveChunks(frozenId, []);
+      }
       if (
         mediaRecorderRef.current &&
         mediaRecorderRef.current.state !== 'inactive'
@@ -276,11 +390,8 @@ export function useRecorder() {
 
   return {
     isRecording,
-    isPaused,
     level,
     startRecording,
-    pauseRecording,
-    resumeRecording,
     stopRecording,
   };
 }
