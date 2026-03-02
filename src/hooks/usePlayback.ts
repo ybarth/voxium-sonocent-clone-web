@@ -22,13 +22,22 @@ function getOrCreateEngine(): PlaybackEngine {
     });
 
     engineInstance.onChunk((chunkId) => {
-      store.getState().setCurrentChunk(chunkId);
+      const state = store.getState();
+      state.setCurrentChunk(chunkId);
+      // Auto-paint chunks during playback when painting mode is active
+      if (state.playback.paintingColor) {
+        state.paintChunk(chunkId, state.playback.paintingColor);
+      }
     });
 
     engineInstance.onEnd(() => {
-      store.getState().setPlaying(false);
-      store.getState().setCurrentChunk(null);
-      store.getState().setCursorPositionInChunk(0);
+      const state = store.getState();
+      state.setPlaying(false);
+      state.setCurrentChunk(null);
+      state.setCursorPositionInChunk(0);
+      if (state.playback.paintingColor) {
+        state.setPaintingColor(null);
+      }
     });
   }
 

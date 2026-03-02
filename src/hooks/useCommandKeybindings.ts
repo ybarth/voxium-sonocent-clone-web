@@ -32,6 +32,31 @@ export function useCommandKeybindings() {
         return;
       }
 
+      // --- Shift+Digit painting mode during playback ---
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const digitMatch = e.code.match(/^Digit([1-9])$/);
+        if (digitMatch) {
+          const state = useProjectStore.getState();
+          if (state.playback.isPlaying) {
+            const num = parseInt(digitMatch[1]);
+            const colorEntry = state.project.colorKey.colors.find(c => c.shortcutKey === num);
+            if (colorEntry) {
+              e.preventDefault();
+              // Push undo once at start of painting session
+              if (!state.playback.paintingColor) {
+                state.pushUndo('recolor');
+              }
+              state.setPaintingColor(colorEntry.hex);
+              // Color the current chunk immediately
+              if (state.playback.currentChunkId) {
+                state.paintChunk(state.playback.currentChunkId, colorEntry.hex);
+              }
+              return;
+            }
+          }
+        }
+      }
+
       const descriptor = eventToDescriptor(e);
       if (!descriptor) return; // Pure modifier press
 
@@ -58,7 +83,21 @@ export function useCommandKeybindings() {
       executeCommand(commandId);
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Stop painting when Shift is released
+      if (e.key === 'Shift') {
+        const state = useProjectStore.getState();
+        if (state.playback.paintingColor) {
+          state.setPaintingColor(null);
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, []);
 }

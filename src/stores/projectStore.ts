@@ -22,6 +22,8 @@ interface PlaybackState {
   insertionPoint: InsertionPoint | null;
   /** Separate from insertionPoint — tracks where the recording head is during live recording */
   recordingHead: InsertionPoint | null;
+  /** When non-null, chunks are painted this color as the cursor passes through them during playback */
+  paintingColor: string | null;
 }
 
 interface SelectionState {
@@ -99,6 +101,9 @@ interface ProjectStore {
   setCurrentChunk: (id: string | null) => void;
   setCursorTime: (time: number) => void;
   setCursorPositionInChunk: (pos: number) => void;
+  setPaintingColor: (color: string | null) => void;
+  /** Color a single chunk without pushing undo (used during painting) */
+  paintChunk: (id: string, color: string) => void;
 
   // Navigation — shift extends selection
   navigateChunk: (direction: 'prev' | 'next', extend?: boolean) => void;
@@ -182,6 +187,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     cursorPositionInChunk: 0,
     insertionPoint: null,
     recordingHead: null,
+    paintingColor: null,
   },
 
   take: { chunkIds: [], originalPosition: null, moved: false },
@@ -1119,6 +1125,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   setCursorPositionInChunk: (pos) =>
     set((s) => ({ playback: { ...s.playback, cursorPositionInChunk: pos } })),
+
+  setPaintingColor: (color) =>
+    set((s) => ({ playback: { ...s.playback, paintingColor: color } })),
+
+  paintChunk: (id, color) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          c.id === id ? { ...c, color } : c
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
 
   // --- Navigation ---
   navigateChunk: (direction, extend = false) => {

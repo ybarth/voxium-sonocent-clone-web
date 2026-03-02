@@ -18,6 +18,7 @@ export function Toolbar() {
   const selection = useProjectStore((s) => s.selection);
   const updateSettings = useProjectStore((s) => s.updateSettings);
   const addSection = useProjectStore((s) => s.addSection);
+  const splitSectionAtChunk = useProjectStore((s) => s.splitSectionAtChunk);
   const deleteChunks = useProjectStore((s) => s.deleteChunks);
   const splitChunkAtCursor = useProjectStore((s) => s.splitChunkAtCursor);
   const mergeChunks = useProjectStore((s) => s.mergeChunks);
@@ -273,7 +274,27 @@ export function Toolbar() {
       <ToolbarButton
         icon={<Plus size={16} />}
         label="Section"
-        onClick={() => addSection()}
+        onClick={() => {
+          const state = useProjectStore.getState();
+          const { playback, project } = state;
+
+          // During playback, if cursor is in the middle of a section, split it
+          if (playback.isPlaying && playback.currentChunkId) {
+            const chunk = project.chunks.find(c => c.id === playback.currentChunkId);
+            if (chunk) {
+              const sectionChunks = project.chunks
+                .filter(c => c.sectionId === chunk.sectionId && !c.isDeleted)
+                .sort((a, b) => a.orderIndex - b.orderIndex);
+              const lastChunk = sectionChunks[sectionChunks.length - 1];
+              if (lastChunk && chunk.orderIndex < lastChunk.orderIndex) {
+                splitSectionAtChunk(chunk.sectionId, chunk.orderIndex + 1);
+                return;
+              }
+            }
+          }
+
+          addSection();
+        }}
       />
 
       <Divider />
