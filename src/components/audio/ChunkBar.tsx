@@ -3,6 +3,10 @@ import type { Chunk } from '../../types';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
 import { type ModifierMode, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
+import { getContrastColor, getAdaptiveCursorStyle } from '../../utils/colorUtils';
+import { getCompositeCssBackground, renderTextureToCanvas, getGradientCss } from '../../utils/textures';
+import { resolveChunkForm, resolvedFormToChunkStyle, getFormBaseColor } from '../../utils/formResolver';
+import { getShapeClipPath, getShapeBorderRadius } from '../../utils/shapeRenderer';
 
 interface ChunkBarProps {
   chunk: Chunk;
@@ -12,6 +16,7 @@ interface ChunkBarProps {
   isCurrent: boolean;
   cursorPosition: number; // 0-1
   modifierMode: ModifierMode;
+  isFilterDimmed?: boolean;
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, sectionId: string, orderIndex: number) => void;
 }
@@ -29,12 +34,14 @@ export const ChunkBar = memo(function ChunkBar({
   isCurrent,
   cursorPosition,
   modifierMode,
+  isFilterDimmed = false,
   onChunkClick,
   onContextMenu,
 }: ChunkBarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const settings = useProjectStore((s) => s.project.settings);
+  const scheme = useProjectStore((s) => s.project.scheme);
   const visualMode = settings.visualMode;
   const numberDisplay = settings.chunkNumberDisplay;
   const zoomLevel = settings.zoomLevel ?? 1.0;
@@ -44,22 +51,59 @@ export const ChunkBar = memo(function ChunkBar({
 
   const duration = chunk.endTime - chunk.startTime;
   const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, duration * currentPxPerSecond));
-  const color = chunk.color ?? DEFAULT_CHUNK_COLOR;
+
+  // Resolve form attributes (formId → legacy → defaults)
+  const resolvedForm = useMemo(
+    () => resolveChunkForm(chunk, scheme, settings.defaultAttributes),
+    [chunk.formId, chunk.color, chunk.style, scheme, settings.defaultAttributes]
+  );
+  const resolvedStyle = useMemo(
+    () => resolvedFormToChunkStyle(resolvedForm),
+    [resolvedForm]
+  );
+
+  const baseColor = chunk.style?.color ?? chunk.color ?? DEFAULT_CHUNK_COLOR;
+  const hasStyle = !!chunk.style;
+
+  // Shape clip-path and border-radius from resolved form
+  const shapeClipPath = useMemo(
+    () => getShapeClipPath(resolvedForm.shape?.builtinId, width, currentBarHeight),
+    [resolvedForm.shape?.builtinId, width, currentBarHeight]
+  );
+  const shapeBorderRadius = useMemo(
+    () => getShapeBorderRadius(resolvedForm.shape?.builtinId),
+    [resolvedForm.shape?.builtinId]
+  );
+
+  // Background style (CSS properties) for flat mode with rich styling
+  const flatBgStyle = useMemo(() => {
+    if (hasStyle && chunk.style) {
+      return getCompositeCssBackground(chunk.style);
+    }
+    return {};
+  }, [hasStyle, chunk.style]);
 
   const bgColor = useMemo(() => {
-    if (visualMode === 'flat') return color;
-    return color + '40';
-  }, [color, visualMode]);
+    if (hasStyle) return undefined; // handled by flatBgStyle
+    if (visualMode === 'flat') return baseColor;
+    return baseColor + '40';
+  }, [baseColor, visualMode, hasStyle]);
 
-  // Cursor/text contrast color
+  // Cursor/text contrast color — adaptive for gradients
   const contrastColor = useMemo(() => {
-    const hex = color.replace('#', '');
-    const r = parseInt(hex.substring(0, 2), 16) / 255;
-    const g = parseInt(hex.substring(2, 4), 16) / 255;
-    const b = parseInt(hex.substring(4, 6), 16) / 255;
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return luminance > 0.5 ? '#000000' : '#FFFFFF';
-  }, [color]);
+    if (hasStyle && chunk.style?.gradient) {
+      return getAdaptiveCursorStyle(chunk.style, baseColor, 0.5).color;
+    }
+    return getContrastColor(baseColor);
+  }, [baseColor, hasStyle, chunk.style]);
+
+  // Adaptive cursor style (updates per frame for gradients)
+  const cursorStyle = useMemo(() => {
+    if (hasStyle && chunk.style) {
+      return getAdaptiveCursorStyle(chunk.style, baseColor, cursorPosition);
+    }
+    return { color: MODIFIER_MODE_META[modifierMode].color, shadow: `0 0 ${4 * zoomLevel}px ${MODIFIER_MODE_META[modifierMode].color}cc` };
+  }, [hasStyle, chunk.style, baseColor, cursorPosition, modifierMode, zoomLevel]);
 
   // Draw waveform
   useEffect(() => {
@@ -79,12 +123,41 @@ export const ChunkBar = memo(function ChunkBar({
     const barWidth = width / peaks.length;
     const mid = currentBarHeight / 2;
 
-    ctx.fillStyle = color;
+    // Gradient fill for waveform bars if style has gradient
+    if (hasStyle && chunk.style?.gradient && chunk.style.gradient.stops.length >= 2) {
+      const dir = chunk.style.gradient.direction;
+      let canvasGrad: CanvasGradient;
+      if (dir === 'to-right' || dir === 'to-left') {
+        canvasGrad = ctx.createLinearGradient(
+          dir === 'to-left' ? width : 0, 0,
+          dir === 'to-left' ? 0 : width, 0
+        );
+      } else {
+        canvasGrad = ctx.createLinearGradient(
+          0, dir === 'to-top' ? currentBarHeight : 0,
+          0, dir === 'to-top' ? 0 : currentBarHeight
+        );
+      }
+      for (const stop of chunk.style.gradient.stops) {
+        canvasGrad.addColorStop(stop.position, stop.color);
+      }
+      ctx.fillStyle = canvasGrad;
+    } else {
+      ctx.fillStyle = baseColor;
+    }
+
     for (let i = 0; i < peaks.length; i++) {
       const h = Math.max(1, peaks[i] * mid * 0.8);
       ctx.fillRect(i * barWidth, mid - h, Math.max(1, barWidth * 0.8), h * 2);
     }
-  }, [chunk.waveformData, width, color, visualMode, currentBarHeight]);
+
+    // Overlay texture on waveform using source-atop compositing
+    if (hasStyle && chunk.style?.texture) {
+      ctx.globalCompositeOperation = 'source-atop';
+      renderTextureToCanvas(ctx, chunk.style.texture, width, currentBarHeight, baseColor);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }, [chunk.waveformData, width, baseColor, visualMode, currentBarHeight, hasStyle, chunk.style]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -118,31 +191,47 @@ export const ChunkBar = memo(function ChunkBar({
   // Show cursor line whenever this is the current chunk (playing or not)
   const showCursor = isCurrent;
 
+  // Build container style
+  const defaultRadius = `${3 * zoomLevel}px`;
+  const containerStyle: React.CSSProperties = {
+    width: `${width}px`,
+    height: `${currentBarHeight}px`,
+    borderRadius: shapeBorderRadius ?? defaultRadius,
+    position: 'relative',
+    cursor: MODIFIER_MODE_META[modifierMode].cursor,
+    margin: `${2 * zoomLevel}px`,
+    display: 'inline-block',
+    verticalAlign: 'top',
+    transition: 'transform 0.15s, box-shadow 0.15s, width 0.28s linear, height 0.1s',
+    transform: isCurrent ? 'scale(1.05)' : 'none',
+    boxShadow: isSelected
+      ? `0 0 0 ${2 * zoomLevel}px #3B82F6, 0 0 ${6 * zoomLevel}px rgba(59,130,246,0.4)`
+      : `0 ${1 * zoomLevel}px ${2 * zoomLevel}px rgba(0,0,0,0.1)`,
+    overflow: 'hidden',
+    userSelect: 'none',
+    zIndex: isCurrent ? 10 : 1,
+    // Shape clip-path
+    ...(shapeClipPath !== 'none' ? { clipPath: shapeClipPath } : {}),
+    // Filter dimming
+    ...(isFilterDimmed ? { opacity: 0.2, filter: 'grayscale(0.8)' } : {}),
+  };
+
+  // Apply background: either rich style or simple color
+  if (hasStyle && visualMode === 'flat') {
+    Object.assign(containerStyle, flatBgStyle);
+  } else {
+    containerStyle.backgroundColor = bgColor;
+  }
+
   return (
     <div
       ref={barRef}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
-      style={{
-        width: `${width}px`,
-        height: `${currentBarHeight}px`,
-        backgroundColor: visualMode === 'flat' ? color : bgColor,
-        borderRadius: `${3 * zoomLevel}px`,
-        position: 'relative',
-        cursor: MODIFIER_MODE_META[modifierMode].cursor,
-        margin: `${2 * zoomLevel}px`,
-        display: 'inline-block',
-        verticalAlign: 'top',
-        transition: 'transform 0.15s, box-shadow 0.15s, width 0.28s linear, height 0.1s',
-        transform: isCurrent ? 'scale(1.05)' : 'none',
-        boxShadow: isSelected
-          ? `0 0 0 ${2 * zoomLevel}px #3B82F6, 0 0 ${6 * zoomLevel}px rgba(59,130,246,0.4)`
-          : `0 ${1 * zoomLevel}px ${2 * zoomLevel}px rgba(0,0,0,0.1)`,
-        overflow: 'hidden',
-        userSelect: 'none',
-        zIndex: isCurrent ? 10 : 1,
-      }}
+      style={containerStyle}
     >
+      {/* Texture overlay for flat mode with rich style — handled by getCompositeCssBackground */}
+
       {/* Selection overlay — light blue tint */}
       {isSelected && (
         <div
@@ -172,7 +261,7 @@ export const ChunkBar = memo(function ChunkBar({
         />
       )}
 
-      {/* Cursor line — shown even when not playing */}
+      {/* Cursor line — adaptive for gradients */}
       {showCursor && (
         <div
           style={{
@@ -181,8 +270,8 @@ export const ChunkBar = memo(function ChunkBar({
             left: `${cursorPosition * 100}%`,
             width: `${Math.max(1, 2 * zoomLevel)}px`,
             height: '100%',
-            backgroundColor: MODIFIER_MODE_META[modifierMode].color,
-            boxShadow: `0 0 ${4 * zoomLevel}px ${MODIFIER_MODE_META[modifierMode].color}cc`,
+            backgroundColor: cursorStyle.color,
+            boxShadow: cursorStyle.shadow,
             zIndex: 3,
             transition: 'left 0.03s linear',
             pointerEvents: 'none',

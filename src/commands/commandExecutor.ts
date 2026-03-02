@@ -190,13 +190,55 @@ export function executeCommand(commandId: string): boolean {
       if (colorEntry) state.colorChunks(selectedIds, colorEntry.hex);
       return true;
     }
+    case 'color.apply10': case 'color.apply11': case 'color.apply12':
+    case 'color.apply13': case 'color.apply14': case 'color.apply15':
+    case 'color.apply16': case 'color.apply17': case 'color.apply18':
+    case 'color.apply19': case 'color.apply20': {
+      if (selectedIds.length === 0) return true;
+      const idx = parseInt(commandId.replace('color.apply', '')) - 1; // 0-indexed
+      const entry = project.colorKey.colors[idx];
+      if (entry) state.colorChunks(selectedIds, entry.hex);
+      return true;
+    }
     case 'color.clear':
       if (selectedIds.length > 0) state.colorChunks(selectedIds, null);
+      return true;
+
+    // --- Style / Filter ---
+    case 'style.openEditor':
+      // This is handled by the UI layer (StyleEditor modal) rather than here
+      // The command exists for keybinding registry purposes
+      return true;
+    case 'filter.clear':
+      state.clearFilter();
+      return true;
+    case 'filter.toggle':
+      // UI-layer toggle — the command exists for keybinding purposes
       return true;
 
     // --- Settings ---
     case 'app.openSettings':
       settingsCallback?.();
+      return true;
+
+    // --- Forms (resolve via active scheme) ---
+    case 'form.apply1': case 'form.apply2': case 'form.apply3':
+    case 'form.apply4': case 'form.apply5': case 'form.apply6':
+    case 'form.apply7': case 'form.apply8': case 'form.apply9': {
+      if (selectedIds.length === 0) return true;
+      const num = parseInt(commandId.replace('form.apply', ''));
+      const form = project.scheme.forms.find((f) => f.shortcutKey === num);
+      if (form) state.applyForm(selectedIds, form.id);
+      return true;
+    }
+    case 'form.clear':
+      if (selectedIds.length > 0) state.clearForm(selectedIds);
+      return true;
+
+    // Scheme/Forge — UI layer handles these
+    case 'scheme.switch':
+    case 'scheme.openManager':
+    case 'forge.open':
       return true;
 
     default:

@@ -3,9 +3,15 @@ import { v4 as uuid } from 'uuid';
 import type {
   Project, Chunk, Section, AudioBufferRef, ProjectSettings,
   UndoAction, InsertionPoint, TakeState,
+  ChunkStyle, SfxMapping, TtsConfig, FilterCriteria,
+  ColorKeyTemplate, ColorKeyEntry,
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS } from '../types';
+import type { Scheme, Form, DefaultAttributes } from '../types/scheme';
+import { migrateColorKeyToScheme } from '../utils/schemeMigration';
+import { ALL_BUILTIN_SCHEMES } from '../constants/schemes';
 import { getFlatSectionOrder } from '../utils/sectionTree';
+import { BUILTIN_TEMPLATES } from '../constants/templates';
 
 // --- Cursor model ---
 // The cursor is a precise position: which chunk (or null if between/outside)
@@ -128,6 +134,63 @@ interface ProjectStore {
   // Selection extras
   invertSelection: () => void;
 
+  // Phase 2: Rich styling
+  styleChunks: (ids: string[], style: ChunkStyle) => void;
+  setSectionStyle: (sectionId: string, style: ChunkStyle | null) => void;
+  addRecentColor: (hex: string) => void;
+  toggleFavoriteColor: (hex: string) => void;
+
+  // Phase 2: Filter
+  setFilter: (criteria: FilterCriteria[]) => void;
+  clearFilter: () => void;
+  toggleFilterCriterion: (criterion: FilterCriteria) => void;
+  extractFilteredChunks: (targetSectionName: string) => void;
+  copyFilteredChunks: (targetSectionName: string) => void;
+  getFilteredChunkIds: () => Set<string>;
+
+  // Phase 2: SFX
+  setSfxMappings: (mappings: SfxMapping[]) => void;
+  addSfxMapping: (mapping: SfxMapping) => void;
+  removeSfxMapping: (id: string) => void;
+
+  // Phase 2: TTS
+  setTtsConfig: (partial: Partial<TtsConfig>) => void;
+
+  // Phase 2: Templates
+  createTemplate: (name: string) => void;
+  updateTemplate: (id: string, updates: Partial<ColorKeyTemplate>) => void;
+  deleteTemplate: (id: string) => void;
+  duplicateTemplate: (id: string) => void;
+  applyTemplate: (id: string, mode?: 'both' | 'colors' | 'sounds') => void;
+  exportTemplate: (id: string) => string;
+  importTemplate: (json: string) => void;
+
+  // Phase 2: Color key management
+  updateColorKeyEntry: (index: number, updates: Partial<ColorKeyEntry>) => void;
+  addColorKeyEntry: (entry: ColorKeyEntry) => void;
+  removeColorKeyEntry: (index: number) => void;
+
+  // Phase 3: Forms & Schemes
+  applyForm: (ids: string[], formId: string) => void;
+  clearForm: (ids: string[]) => void;
+  paintForm: (id: string, formId: string) => void;
+  setActiveScheme: (schemeId: string) => void;
+  createScheme: (name: string) => Scheme;
+  updateScheme: (id: string, updates: Partial<Scheme>) => void;
+  deleteScheme: (id: string) => void;
+  duplicateScheme: (id: string) => void;
+  addFormToScheme: (schemeId: string, form: Form) => void;
+  updateFormInScheme: (schemeId: string, formId: string, updates: Partial<Form>) => void;
+  removeFormFromScheme: (schemeId: string, formId: string) => void;
+  setDefaultAttributes: (updates: Partial<DefaultAttributes>) => void;
+
+  // Scheme templates (localStorage-backed)
+  addScheme: (scheme: Scheme) => void;
+  saveSchemeAsTemplate: (schemeId: string, newName?: string, overwriteTemplateId?: string) => void;
+  loadSchemeTemplate: (templateId: string) => void;
+  getSavedTemplateNames: () => { id: string; name: string }[];
+  deleteSchemeTemplate: (templateId: string) => void;
+
   pushUndo: (type: UndoAction['type']) => void;
   undo: () => void;
   redo: () => void;
@@ -153,11 +216,19 @@ const initialSection: Section = {
   name: 'Section 1',
   orderIndex: 0,
   backgroundColor: null,
+  backgroundStyle: null,
   parentId: null,
   isCollapsed: false,
   depth: 0,
   status: 'active',
 };
+
+const initialScheme: Scheme = migrateColorKeyToScheme(
+  DEFAULT_COLORS,
+  {},
+  [],
+  'Default',
+);
 
 const initialProject: Project = {
   id: uuid(),
@@ -173,6 +244,9 @@ const initialProject: Project = {
     colors: DEFAULT_COLORS,
   },
   settings: { ...DEFAULT_SETTINGS },
+  templates: [],
+  scheme: initialScheme,
+  schemes: [initialScheme],
   undoStack: [],
   redoStack: [],
 };
@@ -394,6 +468,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         sectionId: toMerge[0].sectionId,
         orderIndex: toMerge[0].orderIndex,
         color: toMerge[0].color,
+        style: toMerge[0].style ?? null,
+        formId: toMerge[0].formId ?? null,
         isDeleted: false,
         waveformData: null,
       };
@@ -431,6 +507,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       name: name ?? `Section ${store.project.sections.filter(s => (s.status ?? 'active') === 'active').length + 1}`,
       orderIndex,
       backgroundColor: null,
+      backgroundStyle: null,
       parentId,
       isCollapsed: false,
       depth,
@@ -666,6 +743,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       name: `${section.name} (cont.)`,
       orderIndex: section.orderIndex + 0.5, // Will be renumbered
       backgroundColor: section.backgroundColor,
+      backgroundStyle: section.backgroundStyle ?? null,
       parentId: section.parentId,
       isCollapsed: false,
       depth: section.depth,
@@ -1605,4 +1683,724 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         take: { chunkIds: [], originalPosition: null, moved: false },
       };
     }),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Rich Styling
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  styleChunks: (ids, style) => {
+    get().pushUndo('restyle');
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          ids.includes(c.id) ? { ...c, style, color: style.color } : c
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  setSectionStyle: (sectionId, style) => {
+    get().pushUndo('section-style');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) =>
+          sec.id === sectionId ? { ...sec, backgroundStyle: style } : sec
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  addRecentColor: (hex) => {
+    set((s) => {
+      const recents = s.project.settings.recentColors.filter((r) => r.hex !== hex);
+      recents.unshift({ hex, usedAt: Date.now() });
+      if (recents.length > 20) recents.length = 20;
+      return {
+        project: {
+          ...s.project,
+          settings: { ...s.project.settings, recentColors: recents },
+        },
+      };
+    });
+  },
+
+  toggleFavoriteColor: (hex) => {
+    set((s) => {
+      const favs = s.project.settings.favoriteColors;
+      const exists = favs.some((f) => f.hex === hex);
+      return {
+        project: {
+          ...s.project,
+          settings: {
+            ...s.project.settings,
+            favoriteColors: exists
+              ? favs.filter((f) => f.hex !== hex)
+              : [...favs, { hex }],
+          },
+        },
+      };
+    });
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Filter
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  setFilter: (criteria) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          filter: { active: criteria.length > 0, criteria },
+        },
+      },
+    }));
+  },
+
+  clearFilter: () => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          filter: { active: false, criteria: [] },
+        },
+      },
+    }));
+  },
+
+  toggleFilterCriterion: (criterion) => {
+    set((s) => {
+      const existing = s.project.settings.filter.criteria;
+      const idx = existing.findIndex((c) =>
+        c.type === criterion.type &&
+        c.colorHex === criterion.colorHex &&
+        c.textureId === criterion.textureId
+      );
+      const newCriteria = idx >= 0
+        ? existing.filter((_, i) => i !== idx)
+        : [...existing, criterion];
+      return {
+        project: {
+          ...s.project,
+          settings: {
+            ...s.project.settings,
+            filter: { active: newCriteria.length > 0, criteria: newCriteria },
+          },
+        },
+      };
+    });
+  },
+
+  getFilteredChunkIds: () => {
+    const state = get();
+    const { filter } = state.project.settings;
+    if (!filter.active || filter.criteria.length === 0) return new Set<string>();
+
+    const matching = new Set<string>();
+    for (const chunk of state.project.chunks) {
+      if (chunk.isDeleted) continue;
+      for (const crit of filter.criteria) {
+        if (crit.type === 'color' && crit.colorHex) {
+          const chunkColor = chunk.style?.color ?? chunk.color;
+          if (chunkColor === crit.colorHex) { matching.add(chunk.id); break; }
+        }
+        if (crit.type === 'texture' && crit.textureId) {
+          if (chunk.style?.texture?.builtinId === crit.textureId) { matching.add(chunk.id); break; }
+        }
+      }
+    }
+    return matching;
+  },
+
+  extractFilteredChunks: (targetSectionName) => {
+    const state = get();
+    const matchingIds = state.getFilteredChunkIds();
+    if (matchingIds.size === 0) return;
+
+    state.pushUndo('filter-extract');
+    const newSection = state.addSection(targetSectionName);
+
+    set((s) => {
+      let orderIdx = 0;
+      const updatedChunks = s.project.chunks.map((c) => {
+        if (matchingIds.has(c.id)) {
+          return { ...c, sectionId: newSection.id, orderIndex: orderIdx++ };
+        }
+        return c;
+      });
+
+      // Renumber source sections
+      const affectedSections = new Set(
+        s.project.chunks.filter((c) => matchingIds.has(c.id)).map((c) => c.sectionId)
+      );
+      for (const secId of affectedSections) {
+        let idx = 0;
+        updatedChunks
+          .filter((c) => c.sectionId === secId && !c.isDeleted)
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .forEach((c) => {
+            const target = updatedChunks.find((u) => u.id === c.id);
+            if (target) target.orderIndex = idx++;
+          });
+      }
+
+      return {
+        project: { ...s.project, chunks: updatedChunks, updatedAt: new Date() },
+      };
+    });
+  },
+
+  copyFilteredChunks: (targetSectionName) => {
+    const state = get();
+    const matchingIds = state.getFilteredChunkIds();
+    if (matchingIds.size === 0) return;
+
+    state.pushUndo('filter-copy');
+    const newSection = state.addSection(targetSectionName);
+
+    set((s) => {
+      let orderIdx = 0;
+      const copies: Chunk[] = [];
+      for (const chunk of s.project.chunks) {
+        if (matchingIds.has(chunk.id)) {
+          copies.push({
+            ...chunk,
+            id: uuid(),
+            sectionId: newSection.id,
+            orderIndex: orderIdx++,
+            waveformData: null,
+          });
+        }
+      }
+      return {
+        project: {
+          ...s.project,
+          chunks: [...s.project.chunks, ...copies],
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: SFX
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  setSfxMappings: (mappings) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: { ...s.project.settings, sfxMappings: mappings },
+      },
+    }));
+  },
+
+  addSfxMapping: (mapping) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          sfxMappings: [...s.project.settings.sfxMappings, mapping],
+        },
+      },
+    }));
+  },
+
+  removeSfxMapping: (id) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          sfxMappings: s.project.settings.sfxMappings.filter((m) => m.id !== id),
+        },
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: TTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  setTtsConfig: (partial) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          ttsConfig: { ...s.project.settings.ttsConfig, ...partial },
+        },
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Templates
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  createTemplate: (name) => {
+    const state = get();
+    const template: ColorKeyTemplate = {
+      id: uuid(),
+      name,
+      builtIn: false,
+      colorKey: JSON.parse(JSON.stringify(state.project.colorKey.colors)),
+      styles: {},
+      sfxMappings: JSON.parse(JSON.stringify(state.project.settings.sfxMappings)),
+    };
+    // Capture styles from color key entries
+    for (const entry of state.project.colorKey.colors) {
+      if (entry.style) {
+        template.styles[entry.hex] = JSON.parse(JSON.stringify(entry.style));
+      }
+    }
+    set((s) => ({
+      project: {
+        ...s.project,
+        templates: [...s.project.templates, template],
+      },
+    }));
+  },
+
+  updateTemplate: (id, updates) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        templates: s.project.templates.map((t) =>
+          t.id === id ? { ...t, ...updates } : t
+        ),
+      },
+    }));
+  },
+
+  deleteTemplate: (id) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        templates: s.project.templates.filter((t) => t.id !== id),
+      },
+    }));
+  },
+
+  duplicateTemplate: (id) => {
+    const state = get();
+    const orig = state.project.templates.find((t) => t.id === id);
+    if (!orig) return;
+    const dup: ColorKeyTemplate = {
+      ...JSON.parse(JSON.stringify(orig)),
+      id: uuid(),
+      name: `${orig.name} (Copy)`,
+      builtIn: false,
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        templates: [...s.project.templates, dup],
+      },
+    }));
+  },
+
+  applyTemplate: (id, mode = 'both') => {
+    const state = get();
+    const template = state.project.templates.find((t) => t.id === id)
+      || BUILTIN_TEMPLATES.find((t) => t.id === id);
+    if (!template) return;
+    set((s) => ({
+      project: {
+        ...s.project,
+        ...(mode !== 'sounds' && {
+          colorKey: {
+            ...s.project.colorKey,
+            colors: JSON.parse(JSON.stringify(template.colorKey)),
+          },
+        }),
+        settings: {
+          ...s.project.settings,
+          ...(mode !== 'colors' && {
+            sfxMappings: JSON.parse(JSON.stringify(template.sfxMappings)),
+          }),
+        },
+      },
+    }));
+  },
+
+  exportTemplate: (id) => {
+    const template = get().project.templates.find((t) => t.id === id)
+      || BUILTIN_TEMPLATES.find((t) => t.id === id);
+    if (!template) return '{}';
+    return JSON.stringify(template, null, 2);
+  },
+
+  importTemplate: (json) => {
+    try {
+      const parsed = JSON.parse(json) as ColorKeyTemplate;
+      if (!parsed.name || !parsed.colorKey) throw new Error('Invalid template');
+      const template: ColorKeyTemplate = {
+        ...parsed,
+        id: uuid(),
+        builtIn: false,
+      };
+      set((s) => ({
+        project: {
+          ...s.project,
+          templates: [...s.project.templates, template],
+        },
+      }));
+    } catch (err) {
+      console.error('Failed to import template:', err);
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Color Key Management
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  updateColorKeyEntry: (index, updates) => {
+    set((s) => {
+      const colors = [...s.project.colorKey.colors];
+      if (index >= 0 && index < colors.length) {
+        colors[index] = { ...colors[index], ...updates };
+      }
+      return {
+        project: {
+          ...s.project,
+          colorKey: { ...s.project.colorKey, colors },
+        },
+      };
+    });
+  },
+
+  addColorKeyEntry: (entry) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        colorKey: {
+          ...s.project.colorKey,
+          colors: [...s.project.colorKey.colors, entry],
+        },
+      },
+    }));
+  },
+
+  removeColorKeyEntry: (index) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        colorKey: {
+          ...s.project.colorKey,
+          colors: s.project.colorKey.colors.filter((_, i) => i !== index),
+        },
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 3: Forms & Schemes
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  applyForm: (ids, formId) => {
+    get().pushUndo('apply-form');
+    const form = get().project.scheme.forms.find((f) => f.id === formId);
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          ids.includes(c.id)
+            ? {
+                ...c,
+                formId,
+                // Also sync legacy color for backward compat
+                color: form?.color?.hex ?? c.color,
+                style: form?.color
+                  ? {
+                      color: form.color.hex,
+                      alpha: form.color.alpha,
+                      texture: form.texture?.textureRef ?? c.style?.texture ?? null,
+                      gradient: form.color.gradient ?? null,
+                    }
+                  : c.style,
+              }
+            : c
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  clearForm: (ids) => {
+    get().pushUndo('apply-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          ids.includes(c.id)
+            ? { ...c, formId: null, color: null, style: null }
+            : c
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  paintForm: (id, formId) => {
+    const form = get().project.scheme.forms.find((f) => f.id === formId);
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                formId,
+                color: form?.color?.hex ?? c.color,
+              }
+            : c
+        ),
+      },
+    }));
+  },
+
+  setActiveScheme: (schemeId) => {
+    const state = get();
+    const scheme =
+      state.project.schemes.find((s) => s.id === schemeId) ??
+      ALL_BUILTIN_SCHEMES.find((s) => s.id === schemeId);
+    if (!scheme) return;
+
+    get().pushUndo('change-scheme');
+    set((s) => ({
+      project: {
+        ...s.project,
+        scheme,
+        // Add to list if not already there
+        schemes: s.project.schemes.some((sc) => sc.id === scheme.id)
+          ? s.project.schemes
+          : [...s.project.schemes, scheme],
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  createScheme: (name) => {
+    const newScheme: Scheme = {
+      id: uuid(),
+      name,
+      builtIn: false,
+      forms: [],
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: [...s.project.schemes, newScheme],
+      },
+    }));
+    return newScheme;
+  },
+
+  updateScheme: (id, updates) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: s.project.schemes.map((sc) =>
+          sc.id === id ? { ...sc, ...updates } : sc
+        ),
+        // Also update active scheme if it's the one being edited
+        scheme: s.project.scheme.id === id
+          ? { ...s.project.scheme, ...updates }
+          : s.project.scheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  deleteScheme: (id) => {
+    const state = get();
+    if (state.project.scheme.id === id) return; // Can't delete active scheme
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: s.project.schemes.filter((sc) => sc.id !== id),
+      },
+    }));
+  },
+
+  duplicateScheme: (id) => {
+    const state = get();
+    const source =
+      state.project.schemes.find((s) => s.id === id) ??
+      ALL_BUILTIN_SCHEMES.find((s) => s.id === id);
+    if (!source) return;
+
+    const copy: Scheme = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: uuid(),
+      name: `${source.name} (Copy)`,
+      builtIn: false,
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: [...s.project.schemes, copy],
+      },
+    }));
+  },
+
+  addFormToScheme: (schemeId, form) => {
+    get().pushUndo('update-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: s.project.schemes.map((sc) =>
+          sc.id === schemeId ? { ...sc, forms: [...sc.forms, form] } : sc
+        ),
+        scheme: s.project.scheme.id === schemeId
+          ? { ...s.project.scheme, forms: [...s.project.scheme.forms, form] }
+          : s.project.scheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  updateFormInScheme: (schemeId, formId, updates) => {
+    get().pushUndo('update-form');
+    const updateForms = (forms: Form[]) =>
+      forms.map((f) => (f.id === formId ? { ...f, ...updates } : f));
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: s.project.schemes.map((sc) =>
+          sc.id === schemeId ? { ...sc, forms: updateForms(sc.forms) } : sc
+        ),
+        scheme: s.project.scheme.id === schemeId
+          ? { ...s.project.scheme, forms: updateForms(s.project.scheme.forms) }
+          : s.project.scheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  removeFormFromScheme: (schemeId, formId) => {
+    get().pushUndo('update-form');
+    const removeForms = (forms: Form[]) => forms.filter((f) => f.id !== formId);
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: s.project.schemes.map((sc) =>
+          sc.id === schemeId ? { ...sc, forms: removeForms(sc.forms) } : sc
+        ),
+        scheme: s.project.scheme.id === schemeId
+          ? { ...s.project.scheme, forms: removeForms(s.project.scheme.forms) }
+          : s.project.scheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  setDefaultAttributes: (updates) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          defaultAttributes: {
+            ...s.project.settings.defaultAttributes,
+            ...updates,
+          },
+        },
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  // ─── Scheme templates (localStorage-backed) ─────────────────────────────
+
+  addScheme: (scheme) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: [...s.project.schemes, scheme],
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  saveSchemeAsTemplate: (schemeId, newName, overwriteTemplateId) => {
+    const state = get();
+    const scheme =
+      state.project.schemes.find((s) => s.id === schemeId) ??
+      ALL_BUILTIN_SCHEMES.find((s) => s.id === schemeId);
+    if (!scheme) return;
+
+    const templates = readSchemeTemplates();
+    const clone: Scheme = JSON.parse(JSON.stringify(scheme));
+    clone.builtIn = false;
+
+    if (overwriteTemplateId) {
+      const idx = templates.findIndex((t) => t.id === overwriteTemplateId);
+      if (idx >= 0) {
+        clone.id = overwriteTemplateId;
+        clone.name = newName ?? clone.name;
+        templates[idx] = clone;
+      }
+    } else {
+      clone.id = uuid();
+      clone.name = newName ?? clone.name;
+      templates.push(clone);
+    }
+    writeSchemeTemplates(templates);
+  },
+
+  loadSchemeTemplate: (templateId) => {
+    const templates = readSchemeTemplates();
+    const tpl = templates.find((t) => t.id === templateId);
+    if (!tpl) return;
+
+    const clone: Scheme = JSON.parse(JSON.stringify(tpl));
+    clone.id = uuid();
+    clone.builtIn = false;
+    // Give each form a fresh ID
+    clone.forms = clone.forms.map((f) => ({ ...f, id: uuid() }));
+
+    set((s) => ({
+      project: {
+        ...s.project,
+        schemes: [...s.project.schemes, clone],
+        scheme: clone,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  getSavedTemplateNames: () => {
+    return readSchemeTemplates().map((t) => ({ id: t.id, name: t.name }));
+  },
+
+  deleteSchemeTemplate: (templateId) => {
+    const templates = readSchemeTemplates().filter((t) => t.id !== templateId);
+    writeSchemeTemplates(templates);
+  },
 }));
+
+// ─── localStorage helpers for scheme templates ────────────────────────────
+
+const SCHEME_TEMPLATES_KEY = 'voxium_scheme_templates';
+
+function readSchemeTemplates(): Scheme[] {
+  try {
+    const raw = localStorage.getItem(SCHEME_TEMPLATES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSchemeTemplates(templates: Scheme[]): void {
+  localStorage.setItem(SCHEME_TEMPLATES_KEY, JSON.stringify(templates));
+}

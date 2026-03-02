@@ -19,6 +19,8 @@ export class PlaybackEngine {
 
   private onCursorUpdate: ((chunkId: string, position: number, time: number) => void) | null = null;
   private onChunkChange: ((chunkId: string) => void) | null = null;
+  private onChunkEndCb: ((chunkId: string) => void) | null = null;
+  private onBoundaryCb: ((exitingId: string, enteringId: string) => void) | null = null;
   private onPlaybackEnd: (() => void) | null = null;
   private animFrameId: number | null = null;
 
@@ -71,6 +73,14 @@ export class PlaybackEngine {
     this.onChunkChange = cb;
   }
 
+  onChunkEnd(cb: (chunkId: string) => void) {
+    this.onChunkEndCb = cb;
+  }
+
+  onBoundary(cb: (exitingId: string, enteringId: string) => void) {
+    this.onBoundaryCb = cb;
+  }
+
   onEnd(cb: () => void) {
     this.onPlaybackEnd = cb;
   }
@@ -115,6 +125,11 @@ export class PlaybackEngine {
   }
 
   stop() {
+    // Fire chunk end for the chunk we're stopping on
+    const exitingChunk = this.orderedChunks[this.currentChunkIndex];
+    if (exitingChunk && this.isPlaying) {
+      this.onChunkEndCb?.(exitingChunk.id);
+    }
     this.stopSource();
     this.pausedAt = 0;
     this.currentChunkIndex = 0;
@@ -135,6 +150,11 @@ export class PlaybackEngine {
 
   get currentChunkId(): string | null {
     return this.orderedChunks[this.currentChunkIndex]?.id ?? null;
+  }
+
+  /** Expose the gain node for TTS audio ducking */
+  get mainGainNode(): GainNode {
+    return this.gainNode;
   }
 
   private getCurrentChunkDuration(): number {
@@ -187,6 +207,12 @@ export class PlaybackEngine {
   }
 
   private advanceToNextChunk() {
+    // Fire chunk end for the chunk we're leaving
+    const exitingChunk = this.orderedChunks[this.currentChunkIndex];
+    if (exitingChunk) {
+      this.onChunkEndCb?.(exitingChunk.id);
+    }
+
     this.pausedAt = 0;
     this.currentChunkIndex++;
 
@@ -195,6 +221,12 @@ export class PlaybackEngine {
       this.currentChunkIndex = 0;
       this.onPlaybackEnd?.();
       return;
+    }
+
+    // Fire boundary event when transitioning between chunks
+    const enteringChunk = this.orderedChunks[this.currentChunkIndex];
+    if (exitingChunk && enteringChunk) {
+      this.onBoundaryCb?.(exitingChunk.id, enteringChunk.id);
     }
 
     this.playCurrentChunk();

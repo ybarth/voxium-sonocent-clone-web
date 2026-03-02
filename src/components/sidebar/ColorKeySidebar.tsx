@@ -1,13 +1,20 @@
 import { useState, useCallback } from 'react';
-import { Trash2, RotateCcw, ChevronRight, ChevronDown, GripVertical } from 'lucide-react';
+import { Trash2, RotateCcw, ChevronRight, ChevronDown, GripVertical, Pencil, Plus } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
 import { getFlatSectionOrder } from '../../utils/sectionTree';
+import { FilterPanel } from './FilterPanel';
+import { SfxConfigPanel } from './SfxConfigPanel';
+import { TemplateManager } from './TemplateManager';
+import { StyleEditor } from '../color/StyleEditor';
 
 export function ColorKeySidebar() {
   const colorKey = useProjectStore((s) => s.project.colorKey);
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
   const colorChunks = useProjectStore((s) => s.colorChunks);
+  const updateColorKeyEntry = useProjectStore((s) => s.updateColorKeyEntry);
+  const [showAllColors, setShowAllColors] = useState(false);
+  const [editingColorIndex, setEditingColorIndex] = useState<number | null>(null);
 
   const selectedIds = Array.from(selectedChunkIds);
 
@@ -16,6 +23,9 @@ export function ColorKeySidebar() {
       colorChunks(selectedIds, hex);
     }
   };
+
+  // Show first 9 (shortcutted) by default, all if expanded
+  const visibleColors = showAllColors ? colorKey.colors : colorKey.colors.slice(0, 9);
 
   return (
     <div
@@ -26,6 +36,7 @@ export function ColorKeySidebar() {
         gap: '12px',
       }}
     >
+      {/* ── Color Key ── */}
       <div
         style={{
           fontSize: '12px',
@@ -48,16 +59,36 @@ export function ColorKeySidebar() {
           onClick={() => handleColorClick(null)}
         />
 
-        {colorKey.colors.map((entry) => (
+        {visibleColors.map((entry, idx) => (
           <ColorKeyRow
             key={entry.hex}
             hex={entry.hex}
             label={entry.label}
-            shortcut={entry.shortcutKey.toString()}
+            shortcut={entry.shortcutKey > 0 ? entry.shortcutKey.toString() : undefined}
             isActive={selectedIds.length > 0}
             onClick={() => handleColorClick(entry.hex)}
+            hasStyle={!!entry.style}
+            onEdit={() => setEditingColorIndex(idx)}
           />
         ))}
+
+        {/* Show more/less toggle */}
+        {colorKey.colors.length > 9 && (
+          <button
+            onClick={() => setShowAllColors((v) => !v)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#505060',
+              fontSize: '10px',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              textAlign: 'left',
+            }}
+          >
+            {showAllColors ? 'Show less' : `+ ${colorKey.colors.length - 9} more colors`}
+          </button>
+        )}
       </div>
 
       {selectedIds.length === 0 && (
@@ -74,14 +105,38 @@ export function ColorKeySidebar() {
         </div>
       )}
 
-      {/* Section overview */}
+      {/* ── Filter Panel ── */}
+      <FilterPanel />
+
+      {/* ── SFX Config ── */}
+      <SfxConfigPanel />
+
+      {/* ── Templates ── */}
+      <TemplateManager />
+
+      {/* ── Section overview ── */}
       <SectionOverview />
 
-      {/* Removed sections panel */}
+      {/* ── Removed sections panel ── */}
       <RemovedSectionsPanel />
 
-      {/* Trash bin */}
+      {/* ── Trash bin ── */}
       <TrashBinPanel />
+
+      {/* Style editor modal for color key entries */}
+      {editingColorIndex !== null && (
+        <StyleEditor
+          initialStyle={colorKey.colors[editingColorIndex]?.style ?? null}
+          initialColor={colorKey.colors[editingColorIndex]?.hex ?? '#808080'}
+          target={{ type: 'colorKey', index: editingColorIndex }}
+          onApply={(style, target) => {
+            if (target.type === 'colorKey') {
+              updateColorKeyEntry(target.index, { style });
+            }
+          }}
+          onClose={() => setEditingColorIndex(null)}
+        />
+      )}
     </div>
   );
 }
@@ -92,65 +147,103 @@ function ColorKeyRow({
   shortcut,
   isActive,
   onClick,
+  hasStyle,
+  onEdit,
 }: {
   hex: string;
   label: string;
-  shortcut: string;
+  shortcut?: string;
   isActive: boolean;
   onClick: () => void;
+  hasStyle?: boolean;
+  onEdit?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
+    <div
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
-        padding: '6px 8px',
-        backgroundColor: 'transparent',
-        border: 'none',
+        gap: '4px',
+        padding: '4px 8px',
         borderRadius: '4px',
-        cursor: isActive ? 'pointer' : 'default',
-        opacity: isActive ? 1 : 0.6,
-        width: '100%',
-        textAlign: 'left',
         transition: 'background-color 0.15s',
       }}
       onMouseEnter={(e) => {
-        if (isActive)
-          (e.currentTarget as HTMLElement).style.backgroundColor =
-            'rgba(255,255,255,0.05)';
+        (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.05)';
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
       }}
     >
-      <div
+      <button
+        onClick={onClick}
         style={{
-          width: '20px',
-          height: '20px',
-          borderRadius: '4px',
-          backgroundColor: hex,
-          flexShrink: 0,
-          border: '1px solid rgba(255,255,255,0.1)',
-        }}
-      />
-      <span style={{ fontSize: '12px', color: '#c0c0d0', flex: 1 }}>
-        {label}
-      </span>
-      <span
-        style={{
-          fontSize: '10px',
-          color: '#505060',
-          fontFamily: 'monospace',
-          backgroundColor: 'rgba(255,255,255,0.05)',
-          padding: '1px 5px',
-          borderRadius: '3px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          flex: 1,
+          backgroundColor: 'transparent',
+          border: 'none',
+          cursor: isActive ? 'pointer' : 'default',
+          opacity: isActive ? 1 : 0.6,
+          textAlign: 'left',
+          padding: 0,
         }}
       >
-        {shortcut}
-      </span>
-    </button>
+        <div
+          style={{
+            width: '18px',
+            height: '18px',
+            borderRadius: '4px',
+            backgroundColor: hex,
+            flexShrink: 0,
+            border: hasStyle ? '2px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
+          }}
+        />
+        <span style={{ fontSize: '12px', color: '#c0c0d0', flex: 1 }}>
+          {label}
+        </span>
+      </button>
+
+      {onEdit && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          title="Edit style"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            background: 'none',
+            border: 'none',
+            color: '#505060',
+            cursor: 'pointer',
+            padding: '2px',
+            borderRadius: '3px',
+            flexShrink: 0,
+          }}
+        >
+          <Pencil size={10} />
+        </button>
+      )}
+
+      {shortcut && (
+        <span
+          style={{
+            fontSize: '10px',
+            color: '#505060',
+            fontFamily: 'monospace',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            padding: '1px 5px',
+            borderRadius: '3px',
+            flexShrink: 0,
+          }}
+        >
+          {shortcut}
+        </span>
+      )}
+    </div>
   );
 }
 

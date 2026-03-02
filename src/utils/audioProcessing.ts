@@ -113,6 +113,8 @@ export function segmentAudio(
         sectionId,
         orderIndex: chunks.length,
         color: null,
+        style: null,
+        formId: null,
         isDeleted: false,
         waveformData: null,
       });
@@ -130,6 +132,7 @@ export function segmentAudio(
       sectionId,
       orderIndex: 0,
       color: null,
+      style: null,
       isDeleted: false,
       waveformData: null,
     });

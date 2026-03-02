@@ -7,6 +7,7 @@ import type { Section, Chunk, InsertionPoint } from '../../types';
 import { ChunkBar } from './ChunkBar';
 import { useProjectStore } from '../../stores/projectStore';
 import type { ModifierMode } from '../../hooks/useModifierKeys';
+import { getCompositeCssBackground } from '../../utils/textures';
 
 interface SectionViewProps {
   section: Section;
@@ -49,6 +50,8 @@ export function SectionView({
   const inputRef = useRef<HTMLInputElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
+  const filterState = useProjectStore((s) => s.project.settings.filter);
+  const getFilteredChunkIds = useProjectStore((s) => s.getFilteredChunkIds);
   const isSectionSelected = useProjectStore((s) => s.selection.selectedSectionIds.has(section.id));
   const selectedSectionCount = useProjectStore((s) => s.selection.selectedSectionIds.size);
   const selectSection = useProjectStore((s) => s.selectSection);
@@ -192,7 +195,10 @@ export function SectionView({
         onDrop={handleDrop}
         style={{
           marginBottom: '6px',
-          backgroundColor: section.backgroundColor ?? '#1a1a2e',
+          ...(section.backgroundStyle
+            ? getCompositeCssBackground(section.backgroundStyle)
+            : { backgroundColor: section.backgroundColor ?? '#1a1a2e' }
+          ),
           borderRadius: '4px',
           overflow: 'hidden',
           marginLeft: `${section.depth * 16}px`,
@@ -387,6 +393,7 @@ export function SectionView({
                     isCurrent={chunk.id === currentChunkId}
                     cursorPosition={chunk.id === currentChunkId ? cursorPosition : 0}
                     modifierMode={modifierMode}
+                    isFilterDimmed={filterState.active && filterState.criteria.length > 0 && !getFilteredChunkIds().has(chunk.id)}
                     onChunkClick={onChunkClick}
                     onContextMenu={handleChunkContextMenu}
                   />

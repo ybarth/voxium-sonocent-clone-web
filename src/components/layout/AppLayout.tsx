@@ -5,7 +5,7 @@ import {
   Separator as PanelResizeHandle,
   type PanelImperativeHandle,
 } from 'react-resizable-panels';
-import { ColorKeySidebar } from '../sidebar/ColorKeySidebar';
+import { SchemeSidebar } from '../sidebar/SchemeSidebar';
 import { Toolbar } from '../toolbar/Toolbar';
 import { StatusBar } from './StatusBar';
 import { DockviewLayout } from './DockviewLayout';
@@ -62,7 +62,7 @@ export function AppLayout() {
               borderRight: '1px solid #1a1a2e',
             }}
           >
-            <ColorKeySidebar />
+            <SchemeSidebar />
           </div>
         </Panel>
         <PanelResizeHandle

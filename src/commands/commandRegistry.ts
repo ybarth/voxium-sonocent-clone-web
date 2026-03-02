@@ -10,7 +10,8 @@ export type CommandCategory =
   | 'transport'
   | 'view'
   | 'history'
-  | 'color';
+  | 'color'
+  | 'form';
 
 export interface CommandDefinition {
   id: string;
@@ -32,6 +33,7 @@ export const COMMAND_CATEGORIES: { id: CommandCategory; label: string }[] = [
   { id: 'view', label: 'View' },
   { id: 'history', label: 'History' },
   { id: 'color', label: 'Colors' },
+  { id: 'form', label: 'Forms & Schemes' },
 ];
 
 export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
@@ -225,11 +227,53 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
   'color.apply9': { id: 'color.apply9', label: 'Apply Color 9', category: 'color', description: 'Apply color key 9 to selected chunks', audioPaneOnly: true, requiresSelection: true },
   'color.clear': { id: 'color.clear', label: 'Clear Color', category: 'color', description: 'Remove color from selected chunks', audioPaneOnly: true, requiresSelection: true },
 
+  // --- Phase 2: Style / Filter ---
+  'style.openEditor': {
+    id: 'style.openEditor', label: 'Open Style Editor', category: 'color',
+    description: 'Open the style editor for selected chunks', audioPaneOnly: true, requiresSelection: true,
+  },
+  'filter.toggle': {
+    id: 'filter.toggle', label: 'Toggle Filter Panel', category: 'view',
+    description: 'Expand or collapse the filter panel in the sidebar',
+  },
+  'filter.clear': {
+    id: 'filter.clear', label: 'Clear Filters', category: 'view',
+    description: 'Clear all active filter criteria',
+  },
+
+  // Extended palette colors (10-20, no default keybindings)
+  'color.apply10': { id: 'color.apply10', label: 'Apply Color 10', category: 'color', description: 'Apply extended color 10 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply11': { id: 'color.apply11', label: 'Apply Color 11', category: 'color', description: 'Apply extended color 11 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply12': { id: 'color.apply12', label: 'Apply Color 12', category: 'color', description: 'Apply extended color 12 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply13': { id: 'color.apply13', label: 'Apply Color 13', category: 'color', description: 'Apply extended color 13 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply14': { id: 'color.apply14', label: 'Apply Color 14', category: 'color', description: 'Apply extended color 14 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply15': { id: 'color.apply15', label: 'Apply Color 15', category: 'color', description: 'Apply extended color 15 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply16': { id: 'color.apply16', label: 'Apply Color 16', category: 'color', description: 'Apply extended color 16 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply17': { id: 'color.apply17', label: 'Apply Color 17', category: 'color', description: 'Apply extended color 17 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply18': { id: 'color.apply18', label: 'Apply Color 18', category: 'color', description: 'Apply extended color 18 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply19': { id: 'color.apply19', label: 'Apply Color 19', category: 'color', description: 'Apply extended color 19 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'color.apply20': { id: 'color.apply20', label: 'Apply Color 20', category: 'color', description: 'Apply extended color 20 to selected chunks', audioPaneOnly: true, requiresSelection: true },
+
   // --- Settings ---
   'app.openSettings': {
     id: 'app.openSettings', label: 'Open Settings', category: 'view',
     description: 'Open the settings modal',
   },
+
+  // --- Forms (aliases for color commands, routed through scheme) ---
+  'form.apply1': { id: 'form.apply1', label: 'Apply Form 1', category: 'form', description: 'Apply form 1 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply2': { id: 'form.apply2', label: 'Apply Form 2', category: 'form', description: 'Apply form 2 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply3': { id: 'form.apply3', label: 'Apply Form 3', category: 'form', description: 'Apply form 3 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply4': { id: 'form.apply4', label: 'Apply Form 4', category: 'form', description: 'Apply form 4 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply5': { id: 'form.apply5', label: 'Apply Form 5', category: 'form', description: 'Apply form 5 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply6': { id: 'form.apply6', label: 'Apply Form 6', category: 'form', description: 'Apply form 6 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply7': { id: 'form.apply7', label: 'Apply Form 7', category: 'form', description: 'Apply form 7 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply8': { id: 'form.apply8', label: 'Apply Form 8', category: 'form', description: 'Apply form 8 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.apply9': { id: 'form.apply9', label: 'Apply Form 9', category: 'form', description: 'Apply form 9 from active scheme', audioPaneOnly: true, requiresSelection: true },
+  'form.clear': { id: 'form.clear', label: 'Clear Form', category: 'form', description: 'Remove form from selected chunks', audioPaneOnly: true, requiresSelection: true },
+  'scheme.switch': { id: 'scheme.switch', label: 'Switch Scheme', category: 'form', description: 'Open the scheme selector' },
+  'scheme.openManager': { id: 'scheme.openManager', label: 'Scheme Manager', category: 'form', description: 'Open the scheme manager' },
+  'forge.open': { id: 'forge.open', label: 'Open The Forge', category: 'form', description: 'Open the AI generation modal' },
 };
 
 export type CommandId = keyof typeof COMMAND_REGISTRY;

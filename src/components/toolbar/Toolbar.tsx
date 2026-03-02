@@ -3,7 +3,7 @@ import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
   ZoomIn, ZoomOut, ChevronDown, Settings, MessageSquare, MessageSquareOff,
-  Undo2, Redo2,
+  Undo2, Redo2, Filter, Wand2,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
@@ -13,6 +13,7 @@ import { LayoutToolbar } from '../layout/LayoutToolbar';
 import { executeCommand } from '../../commands/commandExecutor';
 import { useKeybindingStore } from '../../stores/keybindingStore';
 import { Tooltip } from '../Tooltip';
+import { ForgeModal } from '../forge/ForgeModal';
 
 export function Toolbar() {
   const project = useProjectStore((s) => s.project);
@@ -27,6 +28,9 @@ export function Toolbar() {
   const redo = useProjectStore((s) => s.redo);
   const undoStack = useProjectStore((s) => s.project.undoStack);
   const redoStack = useProjectStore((s) => s.project.redoStack);
+  const filterActive = useProjectStore((s) => s.project.settings.filter.active);
+  const filterCount = useProjectStore((s) => s.project.settings.filter.criteria.length);
+  const clearFilter = useProjectStore((s) => s.clearFilter);
 
   const showTooltips = useKeybindingStore((s) => s.showTooltips);
   const setShowTooltips = useKeybindingStore((s) => s.setShowTooltips);
@@ -37,13 +41,14 @@ export function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importAsSubsections, setImportAsSubsections] = useState(false);
   const [showImportDropdown, setShowImportDropdown] = useState(false);
+  const [showForge, setShowForge] = useState(false);
 
   const selectedIds = Array.from(selection.selectedChunkIds);
 
   const triggerImport = useCallback((asSubsections: boolean) => {
     setImportAsSubsections(asSubsections);
     setShowImportDropdown(false);
-    setTimeout(() => fileInputRef.current?.click(), 0);
+    fileInputRef.current?.click();
   }, []);
 
   const handleImport = useCallback(
@@ -367,6 +372,42 @@ export function Toolbar() {
 
       <Divider />
 
+      {/* Filter indicator */}
+      {filterActive && (
+        <ToolbarButton
+          icon={
+            <div style={{ position: 'relative', display: 'inline-flex' }}>
+              <Filter size={14} />
+              <span style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-6px',
+                fontSize: '8px',
+                backgroundColor: '#3B82F6',
+                color: '#fff',
+                borderRadius: '6px',
+                padding: '0 3px',
+                lineHeight: '12px',
+                fontWeight: 700,
+              }}>
+                {filterCount}
+              </span>
+            </div>
+          }
+          label="Clear Filter"
+          onClick={clearFilter}
+          active={true}
+        />
+      )}
+
+      {/* Forge */}
+      <ToolbarButton
+        icon={<Wand2 size={14} />}
+        label="Forge"
+        onClick={() => setShowForge(true)}
+        commandId="forge.open"
+      />
+
       {/* Settings */}
       <ToolbarButton
         icon={<Settings size={14} />}
@@ -399,6 +440,8 @@ export function Toolbar() {
         </span>
       )}
       <SectionSelectionInfo />
+
+      {showForge && <ForgeModal onClose={() => setShowForge(false)} />}
     </div>
   );
 }

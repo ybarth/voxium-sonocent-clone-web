@@ -241,6 +241,8 @@ export function useRecorder() {
             sectionId: curSection,
             orderIndex: insertionOrderRef.current,
             color: null,
+            style: null,
+            formId: null,
             isDeleted: false,
             waveformData: null,
           };
