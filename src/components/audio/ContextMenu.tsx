@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { importMultipleFiles } from '../../utils/importAudio';
+import type { StyleEditorTarget } from '../color/StyleEditor';
+import type { ChunkStyle } from '../../types';
 
 interface ContextMenuProps {
   x: number;
@@ -8,9 +10,10 @@ interface ContextMenuProps {
   sectionId: string;
   orderIndex: number;
   onClose: () => void;
+  onEditStyle?: (target: StyleEditorTarget, initialStyle: ChunkStyle | null, initialColor: string) => void;
 }
 
-export function ContextMenu({ x, y, sectionId, orderIndex, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importModeRef = useRef<'section' | 'subsection'>('section');
@@ -18,6 +21,9 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose }: ContextMen
   const isRecording = useProjectStore((s) => s.playback.isRecording);
   const moveTakeToPosition = useProjectStore((s) => s.moveTakeToPosition);
   const splitSectionAtChunk = useProjectStore((s) => s.splitSectionAtChunk);
+
+  const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
+  const chunks = useProjectStore((s) => s.project.chunks);
 
   const showMoveTake = take.chunkIds.length > 0 && !isRecording;
 
@@ -108,6 +114,25 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose }: ContextMen
       )}
 
       {(showMoveTake || cursorChunk) && <CtxMenuDivider />}
+
+      {onEditStyle && selectedChunkIds.size > 0 && (() => {
+        const ids = Array.from(selectedChunkIds);
+        const firstChunk = chunks.find((c) => c.id === ids[0]);
+        const initialStyle = firstChunk?.style ?? null;
+        const initialColor = firstChunk?.color ?? '#3B82F6';
+        return (
+          <>
+            <CtxMenuItem
+              label={`Edit Style\u2026 (${ids.length} chunk${ids.length !== 1 ? 's' : ''})`}
+              onClick={() => {
+                onEditStyle({ type: 'chunks', ids }, initialStyle, initialColor);
+                onClose();
+              }}
+            />
+            <CtxMenuDivider />
+          </>
+        );
+      })()}
 
       <CtxMenuItem label="Import as Section(s) Here" onClick={handleImportAsSections} />
       <CtxMenuItem label="Import as Subsection(s)" onClick={handleImportAsSubsections} />

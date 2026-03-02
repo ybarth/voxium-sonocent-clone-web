@@ -133,6 +133,7 @@ export function segmentAudio(
       orderIndex: 0,
       color: null,
       style: null,
+      formId: null,
       isDeleted: false,
       waveformData: null,
     });

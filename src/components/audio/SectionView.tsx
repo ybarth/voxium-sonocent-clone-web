@@ -3,11 +3,14 @@ import { createPortal } from 'react-dom';
 import {
   ChevronRight, ChevronDown, ArrowUp, ArrowDown, MoreHorizontal, GripVertical,
 } from 'lucide-react';
-import type { Section, Chunk, InsertionPoint } from '../../types';
+import type { Section, Chunk, InsertionPoint, ChunkStyle } from '../../types';
+import type { SectionScheme } from '../../types/scheme';
+import type { StyleEditorTarget } from '../color/StyleEditor';
 import { ChunkBar } from './ChunkBar';
 import { useProjectStore } from '../../stores/projectStore';
 import type { ModifierMode } from '../../hooks/useModifierKeys';
 import { getCompositeCssBackground } from '../../utils/textures';
+import { desaturateByDepth } from '../../utils/colorUtils';
 
 interface SectionViewProps {
   section: Section;
@@ -25,6 +28,7 @@ interface SectionViewProps {
   onDragEnd?: () => void;
   onDropOnSection?: (targetSectionId: string) => void;
   isDragOver?: boolean;
+  onEditStyle?: (target: StyleEditorTarget, initialStyle: ChunkStyle | null, initialColor: string) => void;
 }
 
 export function SectionView({
@@ -43,6 +47,7 @@ export function SectionView({
   onDragEnd,
   onDropOnSection,
   isDragOver = false,
+  onEditStyle,
 }: SectionViewProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -62,6 +67,8 @@ export function SectionView({
   const toggleSectionCollapse = useProjectStore((s) => s.toggleSectionCollapse);
   const moveSectionUp = useProjectStore((s) => s.moveSectionUp);
   const moveSectionDown = useProjectStore((s) => s.moveSectionDown);
+  const sectionScheme = useProjectStore((s) => s.project.sectionScheme);
+  const allSections = useProjectStore((s) => s.project.sections);
 
   const canCollapse = hasChildren || chunks.length > 0;
 
@@ -176,6 +183,9 @@ export function SectionView({
     onDragEnd?.();
   }, [onDragEnd]);
 
+  // ─── Resolve section background from form + depth desaturation + parent inheritance ───
+  const resolvedBg = resolveSectionBackground(section, allSections, sectionScheme);
+
   return (
     <>
       {/* Drop indicator above this section */}
@@ -195,10 +205,7 @@ export function SectionView({
         onDrop={handleDrop}
         style={{
           marginBottom: '6px',
-          ...(section.backgroundStyle
-            ? getCompositeCssBackground(section.backgroundStyle)
-            : { backgroundColor: section.backgroundColor ?? '#1a1a2e' }
-          ),
+          ...resolvedBg,
           borderRadius: '4px',
           overflow: 'hidden',
           marginLeft: `${section.depth * 16}px`,
@@ -413,11 +420,62 @@ export function SectionView({
           section={section}
           position={menuPos}
           onClose={handleCloseMenu}
+          onEditStyle={onEditStyle}
         />,
         document.body
       )}
     </>
   );
+}
+
+// ─── Resolve section background ─────────────────────────────────────────────
+// Priority: sectionFormId color (desaturated by depth) → parent form inheritance → backgroundStyle → backgroundColor → default
+
+function resolveSectionBackground(
+  section: Section,
+  allSections: Section[],
+  sectionScheme: SectionScheme,
+): React.CSSProperties {
+  // 1. Section has its own form
+  if (section.sectionFormId) {
+    const form = sectionScheme.forms.find((f) => f.id === section.sectionFormId);
+    if (form?.color) {
+      const color = desaturateByDepth(form.color.hex, section.depth);
+      const alpha = form.color.alpha;
+      const texture = form.texture?.textureRef ?? null;
+      // Build a ChunkStyle and use the composite renderer so texture is visible
+      return getCompositeCssBackground({
+        color,
+        alpha,
+        texture,
+        gradient: null,
+      });
+    }
+  }
+
+  // 2. Inherit from parent's form (color + texture)
+  if (section.parentId) {
+    const parent = allSections.find((s) => s.id === section.parentId);
+    if (parent?.sectionFormId) {
+      const form = sectionScheme.forms.find((f) => f.id === parent.sectionFormId);
+      if (form?.color) {
+        const color = desaturateByDepth(form.color.hex, section.depth);
+        const texture = form.texture?.textureRef ?? null;
+        return getCompositeCssBackground({
+          color,
+          alpha: 1,
+          texture,
+          gradient: null,
+        });
+      }
+    }
+  }
+
+  // 3. Fallback to existing backgroundStyle / backgroundColor / default
+  if (section.backgroundStyle) {
+    return getCompositeCssBackground(section.backgroundStyle);
+  }
+  return { backgroundColor: section.backgroundColor ?? '#1a1a2e' };
 }
 
 const iconBtnStyle: React.CSSProperties = {
@@ -435,10 +493,12 @@ function SectionMenu({
   section,
   position,
   onClose,
+  onEditStyle,
 }: {
   section: Section;
   position: { x: number; y: number };
   onClose: () => void;
+  onEditStyle?: (target: StyleEditorTarget, initialStyle: ChunkStyle | null, initialColor: string) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const sections = useProjectStore((s) => s.project.sections);
@@ -452,6 +512,7 @@ function SectionMenu({
   const mergeMultipleSections = useProjectStore((s) => s.mergeMultipleSections);
   const deleteSection = useProjectStore((s) => s.deleteSection);
   const removeSection = useProjectStore((s) => s.removeSection);
+  const selectedSectionIds = useProjectStore((s) => s.selection.selectedSectionIds);
 
   // Close on click outside or Escape
   useEffect(() => {
@@ -519,6 +580,32 @@ function SectionMenu({
     >
       <MenuItem label="Move Up" onClick={() => { moveSectionUp(section.id); onClose(); }} />
       <MenuItem label="Move Down" onClick={() => { moveSectionDown(section.id); onClose(); }} />
+      {onEditStyle && (() => {
+        const selIds = Array.from(selectedSectionIds);
+        const isMulti = selIds.length >= 2 && selectedSectionIds.has(section.id);
+        const initialStyle = section.backgroundStyle ?? null;
+        const initialColor = section.backgroundColor ?? '#1a1a2e';
+        if (isMulti) {
+          return (
+            <MenuItem
+              label={`Edit Background\u2026 (${selIds.length} sections)`}
+              onClick={() => {
+                onEditStyle({ type: 'sections', ids: selIds }, initialStyle, initialColor);
+                onClose();
+              }}
+            />
+          );
+        }
+        return (
+          <MenuItem
+            label="Edit Background\u2026"
+            onClick={() => {
+              onEditStyle({ type: 'section', sectionId: section.id }, initialStyle, initialColor);
+              onClose();
+            }}
+          />
+        );
+      })()}
       <MenuDivider />
       {canNest && (
         <MenuItem

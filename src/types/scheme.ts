@@ -114,3 +114,28 @@ export const DEFAULT_FORM_ATTRIBUTES: DefaultAttributes = {
   color: { hex: '#D1D5DB', alpha: 1 },
   shape: { builtinId: 'default' },
 };
+
+// ─── Section Forms & Schemes ────────────────────────────────────────────────
+// Separate from chunk Forms — only color + texture attributes (no shape/sound).
+
+export interface SectionForm {
+  id: string;
+  label: string;
+  shortcutKey: number;        // 1-9, 0 for no shortcut
+  color?: ColorAttribute;
+  texture?: TextureAttribute;
+}
+
+export interface SectionScheme {
+  id: string;
+  name: string;
+  builtIn: boolean;
+  forms: SectionForm[];
+}
+
+export interface ResolvedSectionForm {
+  formId: string | null;
+  label: string;
+  color: ColorAttribute;
+  texture: TextureAttribute | null;
+}

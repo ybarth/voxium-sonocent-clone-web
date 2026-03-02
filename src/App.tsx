@@ -1,19 +1,15 @@
-import { useState, useEffect } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { useCommandKeybindings } from './hooks/useCommandKeybindings';
 import { usePlaybackSync } from './hooks/usePlayback';
-import { setSettingsCallback } from './commands/commandExecutor';
+import { useLayoutStore } from './stores/layoutStore';
 import { SettingsModal } from './components/settings/SettingsModal';
 
 function App() {
   usePlaybackSync();
   useCommandKeybindings();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    setSettingsCallback(() => setSettingsOpen(true));
-  }, []);
+  const settingsOpen = useLayoutStore((s) => s.settingsOpen);
+  const setSettingsOpen = useLayoutStore((s) => s.setSettingsOpen);
 
   return (
     <>

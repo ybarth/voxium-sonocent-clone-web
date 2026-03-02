@@ -3,6 +3,7 @@
 // involve the usePlayback hook (not accessible from plain functions).
 
 import { useProjectStore } from '../stores/projectStore';
+import { useLayoutStore } from '../stores/layoutStore';
 
 export type TransportCallbacks = {
   togglePlay: () => void;
@@ -13,12 +14,6 @@ let transportCallbacks: TransportCallbacks | null = null;
 
 export function setTransportCallbacks(cbs: TransportCallbacks) {
   transportCallbacks = cbs;
-}
-
-let settingsCallback: (() => void) | null = null;
-
-export function setSettingsCallback(cb: () => void) {
-  settingsCallback = cb;
 }
 
 export function executeCommand(commandId: string): boolean {
@@ -218,7 +213,7 @@ export function executeCommand(commandId: string): boolean {
 
     // --- Settings ---
     case 'app.openSettings':
-      settingsCallback?.();
+      useLayoutStore.getState().setSettingsOpen(true);
       return true;
 
     // --- Forms (resolve via active scheme) ---

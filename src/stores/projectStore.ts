@@ -7,9 +7,10 @@ import type {
   ColorKeyTemplate, ColorKeyEntry,
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS } from '../types';
-import type { Scheme, Form, DefaultAttributes } from '../types/scheme';
+import type { Scheme, Form, DefaultAttributes, SectionScheme, SectionForm } from '../types/scheme';
 import { migrateColorKeyToScheme } from '../utils/schemeMigration';
 import { ALL_BUILTIN_SCHEMES } from '../constants/schemes';
+import { VIVID_SECTION_SCHEME, ALL_BUILTIN_SECTION_SCHEMES } from '../constants/sectionSchemes';
 import { getFlatSectionOrder } from '../utils/sectionTree';
 import { BUILTIN_TEMPLATES } from '../constants/templates';
 
@@ -137,6 +138,7 @@ interface ProjectStore {
   // Phase 2: Rich styling
   styleChunks: (ids: string[], style: ChunkStyle) => void;
   setSectionStyle: (sectionId: string, style: ChunkStyle | null) => void;
+  setSectionStyles: (sectionIds: string[], style: ChunkStyle | null) => void;
   addRecentColor: (hex: string) => void;
   toggleFavoriteColor: (hex: string) => void;
 
@@ -184,6 +186,18 @@ interface ProjectStore {
   removeFormFromScheme: (schemeId: string, formId: string) => void;
   setDefaultAttributes: (updates: Partial<DefaultAttributes>) => void;
 
+  // Phase 3: Section Forms & Schemes
+  applySectionForm: (sectionIds: string[], formId: string) => void;
+  clearSectionForm: (sectionIds: string[]) => void;
+  setActiveSectionScheme: (schemeId: string) => void;
+  createSectionScheme: (name: string) => SectionScheme;
+  updateSectionScheme: (id: string, updates: Partial<SectionScheme>) => void;
+  deleteSectionScheme: (id: string) => void;
+  duplicateSectionScheme: (id: string) => void;
+  addSectionFormToScheme: (schemeId: string, form: SectionForm) => void;
+  updateSectionFormInScheme: (schemeId: string, formId: string, updates: Partial<SectionForm>) => void;
+  removeSectionFormFromScheme: (schemeId: string, formId: string) => void;
+
   // Scheme templates (localStorage-backed)
   addScheme: (scheme: Scheme) => void;
   saveSchemeAsTemplate: (schemeId: string, newName?: string, overwriteTemplateId?: string) => void;
@@ -221,6 +235,7 @@ const initialSection: Section = {
   isCollapsed: false,
   depth: 0,
   status: 'active',
+  sectionFormId: null,
 };
 
 const initialScheme: Scheme = migrateColorKeyToScheme(
@@ -247,6 +262,8 @@ const initialProject: Project = {
   templates: [],
   scheme: initialScheme,
   schemes: [initialScheme],
+  sectionScheme: VIVID_SECTION_SCHEME,
+  sectionSchemes: [VIVID_SECTION_SCHEME],
   undoStack: [],
   redoStack: [],
 };
@@ -512,6 +529,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       isCollapsed: false,
       depth,
       status: 'active',
+      sectionFormId: null,
     };
 
     // Bump sibling orderIndexes that are >= the new orderIndex (when inserting in the middle)
@@ -748,6 +766,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       isCollapsed: false,
       depth: section.depth,
       status: 'active',
+      sectionFormId: null,
     };
 
     set((s) => {
@@ -1714,6 +1733,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }));
   },
 
+  setSectionStyles: (sectionIds, style) => {
+    get().pushUndo('section-style');
+    const idSet = new Set(sectionIds);
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) =>
+          idSet.has(sec.id) ? { ...sec, backgroundStyle: style } : sec
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
   addRecentColor: (hex) => {
     set((s) => {
       const recents = s.project.settings.recentColors.filter((r) => r.hex !== hex);
@@ -2314,6 +2347,170 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             ...updates,
           },
         },
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 3: Section Forms & Schemes
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  applySectionForm: (sectionIds, formId) => {
+    get().pushUndo('apply-section-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) =>
+          sectionIds.includes(sec.id) ? { ...sec, sectionFormId: formId } : sec
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  clearSectionForm: (sectionIds) => {
+    get().pushUndo('apply-section-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) =>
+          sectionIds.includes(sec.id) ? { ...sec, sectionFormId: null } : sec
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  setActiveSectionScheme: (schemeId) => {
+    const state = get();
+    const sectionScheme =
+      state.project.sectionSchemes.find((s) => s.id === schemeId) ??
+      ALL_BUILTIN_SECTION_SCHEMES.find((s) => s.id === schemeId);
+    if (!sectionScheme) return;
+
+    get().pushUndo('change-section-scheme');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionScheme,
+        sectionSchemes: s.project.sectionSchemes.some((sc) => sc.id === sectionScheme.id)
+          ? s.project.sectionSchemes
+          : [...s.project.sectionSchemes, sectionScheme],
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  createSectionScheme: (name) => {
+    const newScheme: SectionScheme = {
+      id: uuid(),
+      name,
+      builtIn: false,
+      forms: [],
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: [...s.project.sectionSchemes, newScheme],
+      },
+    }));
+    return newScheme;
+  },
+
+  updateSectionScheme: (id, updates) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: s.project.sectionSchemes.map((sc) =>
+          sc.id === id ? { ...sc, ...updates } : sc
+        ),
+        sectionScheme: s.project.sectionScheme.id === id
+          ? { ...s.project.sectionScheme, ...updates }
+          : s.project.sectionScheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  deleteSectionScheme: (id) => {
+    const state = get();
+    if (state.project.sectionScheme.id === id) return; // Can't delete active
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: s.project.sectionSchemes.filter((sc) => sc.id !== id),
+      },
+    }));
+  },
+
+  duplicateSectionScheme: (id) => {
+    const state = get();
+    const source =
+      state.project.sectionSchemes.find((s) => s.id === id) ??
+      ALL_BUILTIN_SECTION_SCHEMES.find((s) => s.id === id);
+    if (!source) return;
+
+    const copy: SectionScheme = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: uuid(),
+      name: `${source.name} (Copy)`,
+      builtIn: false,
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: [...s.project.sectionSchemes, copy],
+      },
+    }));
+  },
+
+  addSectionFormToScheme: (schemeId, form) => {
+    get().pushUndo('update-section-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: s.project.sectionSchemes.map((sc) =>
+          sc.id === schemeId ? { ...sc, forms: [...sc.forms, form] } : sc
+        ),
+        sectionScheme: s.project.sectionScheme.id === schemeId
+          ? { ...s.project.sectionScheme, forms: [...s.project.sectionScheme.forms, form] }
+          : s.project.sectionScheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  updateSectionFormInScheme: (schemeId, formId, updates) => {
+    get().pushUndo('update-section-form');
+    const updateForms = (forms: SectionForm[]) =>
+      forms.map((f) => (f.id === formId ? { ...f, ...updates } : f));
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: s.project.sectionSchemes.map((sc) =>
+          sc.id === schemeId ? { ...sc, forms: updateForms(sc.forms) } : sc
+        ),
+        sectionScheme: s.project.sectionScheme.id === schemeId
+          ? { ...s.project.sectionScheme, forms: updateForms(s.project.sectionScheme.forms) }
+          : s.project.sectionScheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  removeSectionFormFromScheme: (schemeId, formId) => {
+    get().pushUndo('update-section-form');
+    const removeForms = (forms: SectionForm[]) => forms.filter((f) => f.id !== formId);
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: s.project.sectionSchemes.map((sc) =>
+          sc.id === schemeId ? { ...sc, forms: removeForms(sc.forms) } : sc
+        ),
+        sectionScheme: s.project.sectionScheme.id === schemeId
+          ? { ...s.project.sectionScheme, forms: removeForms(s.project.sectionScheme.forms) }
+          : s.project.sectionScheme,
         updatedAt: new Date(),
       },
     }));

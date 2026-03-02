@@ -2,7 +2,7 @@
 // Phase 2: Rich Styling, SFX, TTS, Filtering, Templates
 // Phase 3: Forms & Schemes
 
-import type { Scheme, DefaultAttributes } from './scheme';
+import type { Scheme, DefaultAttributes, SectionScheme } from './scheme';
 import { DEFAULT_FORM_ATTRIBUTES } from './scheme';
 
 // ─── Texture types ───────────────────────────────────────────────────────────
@@ -136,6 +136,9 @@ export interface Project {
   // Phase 3: Forms & Schemes
   scheme: Scheme;             // active scheme
   schemes: Scheme[];          // all available schemes
+  // Phase 3: Section Forms & Schemes
+  sectionScheme: SectionScheme;       // active section scheme
+  sectionSchemes: SectionScheme[];    // all available section schemes
   undoStack: UndoAction[];
   redoStack: UndoAction[];
 }
@@ -173,6 +176,7 @@ export interface Section {
   isCollapsed: boolean;
   depth: number; // 0 = top-level, 1 = subsection (max depth: 1)
   status: 'active' | 'removed' | 'trashed';
+  sectionFormId: string | null; // Phase 3: section form from active section scheme
 }
 
 export interface ColorKey {
@@ -245,7 +249,11 @@ export type UndoActionType =
   // Phase 3: Forms & Schemes
   | 'apply-form'
   | 'change-scheme'
-  | 'update-form';
+  | 'update-form'
+  // Phase 3: Section Forms & Schemes
+  | 'apply-section-form'
+  | 'change-section-scheme'
+  | 'update-section-form';
 
 export interface UndoAction {
   type: UndoActionType;

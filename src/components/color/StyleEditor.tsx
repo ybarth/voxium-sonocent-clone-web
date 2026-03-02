@@ -9,6 +9,7 @@ import { getCompositeCssBackground } from '../../utils/textures';
 export type StyleEditorTarget =
   | { type: 'chunks'; ids: string[] }
   | { type: 'section'; sectionId: string }
+  | { type: 'sections'; ids: string[] }
   | { type: 'colorKey'; index: number };
 
 interface StyleEditorProps {
@@ -64,6 +65,8 @@ export function StyleEditor({ initialStyle, initialColor, target, onApply, onClo
       ? `${target.ids.length} Chunk${target.ids.length !== 1 ? 's' : ''}`
       : target.type === 'section'
       ? 'Section Background'
+      : target.type === 'sections'
+      ? `${target.ids.length} Section(s) Background`
       : 'Color Key Entry';
 
   return (

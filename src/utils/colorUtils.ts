@@ -138,6 +138,28 @@ export function sampleGradientColorAt(gradient: GradientDef, fraction: number): 
   return stops[stops.length - 1].color;
 }
 
+// ─── Section saturation utilities ────────────────────────────────────────────
+
+/** Check if a hex color has HSL saturation >= the given minimum (default 75%) */
+export function isHighSaturation(hex: string, min = 75): boolean {
+  const { s } = hexToHsl(hex);
+  return s >= min;
+}
+
+/** Clamp HSL saturation upward to at least `min`% (default 75%) */
+export function enforceMinSaturation(hex: string, min = 75): string {
+  const { h, s, l } = hexToHsl(hex);
+  if (s >= min) return hex;
+  return hslToHex(h, min, l);
+}
+
+/** Reduce saturation by `step * depth` percentage points (default step=10) */
+export function desaturateByDepth(hex: string, depth: number, step = 10): string {
+  if (depth <= 0) return hex;
+  const { h, s, l } = hexToHsl(hex);
+  return hslToHex(h, Math.max(0, s - step * depth), l);
+}
+
 // ─── Adaptive cursor style ──────────────────────────────────────────────────
 
 export function getAdaptiveCursorStyle(

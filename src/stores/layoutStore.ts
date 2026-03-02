@@ -24,8 +24,10 @@ interface LayoutStore {
   // Runtime refs (not persisted)
   dockviewApi: DockviewApi | null;
   sidebarPanelApi: SidebarApi | null;
+  settingsOpen: boolean;
 
   // Actions
+  setSettingsOpen: (open: boolean) => void;
   setLocked: (locked: boolean) => void;
   toggleLocked: () => void;
   setActivePreset: (preset: LayoutPresetId) => void;
@@ -48,6 +50,9 @@ export const useLayoutStore = create<LayoutStore>()(
       hiddenPanes: [],
       dockviewApi: null,
       sidebarPanelApi: null,
+      settingsOpen: false,
+
+      setSettingsOpen: (open) => set({ settingsOpen: open }),
 
       setLocked: (locked) => {
         if (locked) {

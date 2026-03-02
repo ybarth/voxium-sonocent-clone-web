@@ -4,6 +4,9 @@ import { usePlayback } from '../../hooks/usePlayback';
 import { SectionView } from './SectionView';
 import { ContextMenu } from './ContextMenu';
 import { TakeBanner } from './TakeBanner';
+import { StyleEditor } from '../color/StyleEditor';
+import type { StyleEditorTarget } from '../color/StyleEditor';
+import type { ChunkStyle } from '../../types';
 import { importMultipleFiles } from '../../utils/importAudio';
 import { getFlatSectionOrder, hasCollapsedAncestor } from '../../utils/sectionTree';
 import { useModifierKeys, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
@@ -13,6 +16,12 @@ interface ContextMenuState {
   y: number;
   sectionId: string;
   orderIndex: number;
+}
+
+interface StyleEditorState {
+  target: StyleEditorTarget;
+  initialStyle: ChunkStyle | null;
+  initialColor: string;
 }
 
 export function AudioPane() {
@@ -27,6 +36,7 @@ export function AudioPane() {
   const modifierMode = useModifierKeys();
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [styleEditorState, setStyleEditorState] = useState<StyleEditorState | null>(null);
 
   // Section drag-and-drop state
   const [dragSectionId, setDragSectionId] = useState<string | null>(null);
@@ -83,6 +93,31 @@ export function AudioPane() {
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu(null);
+  }, []);
+
+  const handleOpenStyleEditor = useCallback(
+    (target: StyleEditorTarget, initialStyle: ChunkStyle | null, initialColor: string) => {
+      setStyleEditorState({ target, initialStyle, initialColor });
+    },
+    []
+  );
+
+  const handleApplyStyle = useCallback(
+    (style: ChunkStyle, target: StyleEditorTarget) => {
+      const store = useProjectStore.getState();
+      if (target.type === 'chunks') {
+        store.styleChunks(target.ids, style);
+      } else if (target.type === 'section') {
+        store.setSectionStyle(target.sectionId, style);
+      } else if (target.type === 'sections') {
+        store.setSectionStyles(target.ids, style);
+      }
+    },
+    []
+  );
+
+  const handleCloseStyleEditor = useCallback(() => {
+    setStyleEditorState(null);
   }, []);
 
   const handleFileDrop = useCallback((e: React.DragEvent) => {
@@ -232,6 +267,7 @@ export function AudioPane() {
               onDragEnd={handleSectionDragEnd}
               onDropOnSection={handleDropOnSection}
               isDragOver={dropTargetSectionId === section.id}
+              onEditStyle={handleOpenStyleEditor}
             />
           );
         })}
@@ -296,6 +332,17 @@ export function AudioPane() {
           sectionId={contextMenu.sectionId}
           orderIndex={contextMenu.orderIndex}
           onClose={handleCloseContextMenu}
+          onEditStyle={handleOpenStyleEditor}
+        />
+      )}
+
+      {styleEditorState && (
+        <StyleEditor
+          target={styleEditorState.target}
+          initialStyle={styleEditorState.initialStyle}
+          initialColor={styleEditorState.initialColor}
+          onApply={handleApplyStyle}
+          onClose={handleCloseStyleEditor}
         />
       )}
     </div>

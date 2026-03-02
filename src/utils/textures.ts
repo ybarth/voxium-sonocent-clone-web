@@ -43,7 +43,7 @@ function getBuiltinTextureCssInternal(
   scale: number
 ): { backgroundImage: string; backgroundSize: string } {
   const s = scale;
-  const pc = rgba(patternColor, 0.3); // pattern color at partial opacity
+  const pc = rgba(patternColor, 0.45); // pattern color — 45% alpha for reliable visibility
   const tr = 'transparent';
 
   switch (id) {
@@ -268,7 +268,7 @@ export function renderTextureToCanvas(
     // Simple canvas texture rendering — draw pattern-like lines
     const patternColor = getContrastPatternColor(baseColor);
     const { r, g, b } = hexToRgb(patternColor);
-    ctx.strokeStyle = `rgba(${r},${g},${b},0.3)`;
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.45)`;
     ctx.lineWidth = 1;
 
     const s = textureRef.scale;
@@ -300,7 +300,7 @@ export function renderTextureToCanvas(
     } else if (id.startsWith('dots')) {
       const radius = id === 'dots-sm' ? 1 * s : id === 'dots-md' ? 2 * s : 3 * s;
       const spacing = id === 'dots-sm' ? 5 * s : id === 'dots-md' ? 8 * s : 10 * s;
-      ctx.fillStyle = `rgba(${r},${g},${b},0.3)`;
+      ctx.fillStyle = `rgba(${r},${g},${b},0.45)`;
       for (let x = spacing / 2; x < width; x += spacing) {
         for (let y = spacing / 2; y < height; y += spacing) {
           ctx.beginPath();
@@ -330,10 +330,24 @@ export function renderTextureToCanvas(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Compute a pattern color that contrasts with the base color.
+ * For very dark or very bright backgrounds the default 30% opacity used in
+ * `getBuiltinTextureCssInternal` can be invisible, so we boost the effective
+ * opacity via a semi-transparent color that adapts to mid-range luminance.
+ */
 function getContrastPatternColor(baseColor: string): string {
   const { r, g, b } = hexToRgb(baseColor);
   const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return lum > 0.5 ? '#000000' : '#FFFFFF';
+
+  // For mid-range backgrounds (0.25-0.65) the existing black/white at 30%
+  // opacity works fine. For extremes we shift toward an intermediate gray
+  // so the 30% alpha still produces a visible contrast difference.
+  if (lum > 0.65) return '#000000';       // dark pattern on light bg
+  if (lum < 0.15) return '#FFFFFF';       // white pattern on very dark bg
+  // Medium-dark range (0.15-0.65): use a lighter gray so the 0.3 alpha
+  // produces enough contrast against the mid-tone base.
+  return lum > 0.5 ? '#1a1a1a' : '#e0e0e0';
 }
 
 // Re-export for convenience
