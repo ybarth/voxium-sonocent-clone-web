@@ -1,5 +1,8 @@
+import { useState, useCallback } from 'react';
+import { Trash2, RotateCcw, ChevronRight, ChevronDown, GripVertical } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
+import { getFlatSectionOrder } from '../../utils/sectionTree';
 
 export function ColorKeySidebar() {
   const colorKey = useProjectStore((s) => s.project.colorKey);
@@ -73,6 +76,12 @@ export function ColorKeySidebar() {
 
       {/* Section overview */}
       <SectionOverview />
+
+      {/* Removed sections panel */}
+      <RemovedSectionsPanel />
+
+      {/* Trash bin */}
+      <TrashBinPanel />
     </div>
   );
 }
@@ -148,11 +157,11 @@ function ColorKeyRow({
 function SectionOverview() {
   const sections = useProjectStore((s) => s.project.sections);
   const chunks = useProjectStore((s) => s.project.chunks);
-  const navigateSection = useProjectStore((s) => s.navigateSection);
   const currentChunkId = useProjectStore((s) => s.playback.currentChunkId);
   const currentChunk = chunks.find((c) => c.id === currentChunkId);
 
-  const ordered = [...sections].sort((a, b) => a.orderIndex - b.orderIndex);
+  const activeSections = sections.filter(s => (s.status ?? 'active') === 'active');
+  const ordered = getFlatSectionOrder(activeSections);
 
   return (
     <div style={{ marginTop: '8px' }}>
@@ -179,12 +188,11 @@ function SectionOverview() {
             <button
               key={section.id}
               onClick={() => {
-                // Navigate to this section
                 const sectionChunks = chunks
                   .filter((c) => c.sectionId === section.id && !c.isDeleted)
                   .sort((a, b) => a.orderIndex - b.orderIndex);
                 if (sectionChunks.length > 0) {
-                  useProjectStore.getState().selectChunk(sectionChunks[0].id);
+                  useProjectStore.getState().selectChunk(sectionChunks[0].id, 'replace');
                   useProjectStore.getState().setCurrentChunk(sectionChunks[0].id);
                 }
               }}
@@ -193,6 +201,7 @@ function SectionOverview() {
                 alignItems: 'center',
                 gap: '8px',
                 padding: '5px 8px',
+                paddingLeft: `${8 + (section.depth ?? 0) * 12}px`,
                 backgroundColor: isCurrent
                   ? 'rgba(59, 130, 246, 0.15)'
                   : 'transparent',
@@ -219,6 +228,217 @@ function SectionOverview() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function RemovedSectionsPanel() {
+  const sections = useProjectStore((s) => s.project.sections);
+  const chunks = useProjectStore((s) => s.project.chunks);
+  const restoreSection = useProjectStore((s) => s.restoreSection);
+  const deleteSection = useProjectStore((s) => s.deleteSection);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleDragStart = useCallback((e: React.DragEvent, sectionId: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/x-restore-section-id', sectionId);
+  }, []);
+
+  const removedSections = sections.filter(s => (s.status ?? 'active') === 'removed');
+  if (removedSections.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      <button
+        onClick={() => setIsExpanded(v => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: '12px',
+          fontWeight: 600,
+          color: '#F59E0B',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          marginBottom: '4px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+          width: '100%',
+        }}
+      >
+        {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        Removed ({removedSections.length})
+      </button>
+
+      {isExpanded && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {removedSections.map((section) => {
+            const count = chunks.filter(c => c.sectionId === section.id && !c.isDeleted).length;
+            return (
+              <div
+                key={section.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, section.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.15)',
+                  cursor: 'grab',
+                }}
+              >
+                <GripVertical size={10} style={{ color: '#F59E0B', opacity: 0.5, flexShrink: 0 }} />
+                <span style={{ fontSize: '11px', color: '#D4A030', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {section.name}
+                </span>
+                <span style={{ fontSize: '10px', color: '#806020' }}>{count}</span>
+                <button
+                  onClick={() => restoreSection(section.id)}
+                  title="Restore to project"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: 'none',
+                    border: 'none',
+                    color: '#F59E0B',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    borderRadius: '3px',
+                    flexShrink: 0,
+                  }}
+                >
+                  <RotateCcw size={11} />
+                </button>
+                <button
+                  onClick={() => deleteSection(section.id)}
+                  title="Move to trash"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: 'none',
+                    border: 'none',
+                    color: '#806020',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    borderRadius: '3px',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: '10px', color: '#806020', fontStyle: 'italic', padding: '4px 8px' }}>
+            Drag sections back to the audio pane to restore
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrashBinPanel() {
+  const sections = useProjectStore((s) => s.project.sections);
+  const chunks = useProjectStore((s) => s.project.chunks);
+  const restoreSection = useProjectStore((s) => s.restoreSection);
+  const emptyTrash = useProjectStore((s) => s.emptyTrash);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const trashedSections = sections.filter(s => (s.status ?? 'active') === 'trashed');
+  if (trashedSections.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+        <button
+          onClick={() => setIsExpanded(v => !v)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#EF4444',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            flex: 1,
+          }}
+        >
+          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <Trash2 size={12} />
+          Trash ({trashedSections.length})
+        </button>
+        <button
+          onClick={emptyTrash}
+          title="Empty trash permanently"
+          style={{
+            fontSize: '10px',
+            color: '#EF4444',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '4px',
+            padding: '2px 6px',
+            cursor: 'pointer',
+          }}
+        >
+          Empty
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {trashedSections.map((section) => {
+            const count = chunks.filter(c => c.sectionId === section.id && !c.isDeleted).length;
+            return (
+              <div
+                key={section.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                  border: '1px solid rgba(239, 68, 68, 0.1)',
+                  opacity: 0.7,
+                }}
+              >
+                <span style={{ fontSize: '11px', color: '#f87171', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {section.name}
+                </span>
+                <span style={{ fontSize: '10px', color: '#7f1d1d' }}>{count}</span>
+                <button
+                  onClick={() => restoreSection(section.id)}
+                  title="Restore from trash"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: 'none',
+                    border: 'none',
+                    color: '#f87171',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    borderRadius: '3px',
+                    flexShrink: 0,
+                  }}
+                >
+                  <RotateCcw size={11} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

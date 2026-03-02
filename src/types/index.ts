@@ -40,6 +40,10 @@ export interface Section {
   name: string;
   orderIndex: number;
   backgroundColor: string | null;
+  parentId: string | null;
+  isCollapsed: boolean;
+  depth: number; // 0 = top-level, 1 = subsection (max depth: 1)
+  status: 'active' | 'removed' | 'trashed';
 }
 
 export interface ColorKey {
@@ -86,7 +90,16 @@ export type UndoActionType =
   | 'add-section'
   | 'rename-section'
   | 'delete-section'
-  | 'import-audio';
+  | 'import-audio'
+  | 'reorder-sections'
+  | 'merge-sections'
+  | 'split-section'
+  | 'nest-section'
+  | 'unnest-section'
+  | 'collapse-section'
+  | 'remove-section'
+  | 'restore-section'
+  | 'empty-trash';
 
 export interface UndoAction {
   type: UndoActionType;

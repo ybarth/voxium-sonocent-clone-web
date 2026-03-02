@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { PlaybackEngine } from '../utils/playbackEngine';
 import { useProjectStore } from '../stores/projectStore';
 

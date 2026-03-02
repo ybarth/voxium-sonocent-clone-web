@@ -140,11 +140,31 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Merge — Ctrl+M
+      // Merge — Ctrl+M (legacy) or m (new)
       if (ctrl && e.key === 'm') {
         e.preventDefault();
         if (selectedIds.length >= 2) {
           state.mergeChunks(selectedIds);
+        }
+        return;
+      }
+
+      // m — merge selected chunks
+      if (!ctrl && !shift && e.key === 'm') {
+        e.preventDefault();
+        if (selectedIds.length >= 2) {
+          state.mergeChunks(selectedIds);
+        }
+        return;
+      }
+
+      // Shift+M — merge selected sections
+      if (!ctrl && shift && e.key === 'M') {
+        e.preventDefault();
+        const selectedSectionIds = Array.from(selection.selectedSectionIds);
+        if (selectedSectionIds.length >= 2) {
+          state.mergeMultipleSections(selectedSectionIds);
+          state.clearSectionSelection();
         }
         return;
       }

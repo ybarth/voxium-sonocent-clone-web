@@ -1,13 +1,13 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
-  ZoomIn, ZoomOut
+  ZoomIn, ZoomOut, ChevronDown
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
 import { useRecorder } from '../../hooks/useRecorder';
-import { importAudioFile } from '../../utils/importAudio';
+import { importMultipleFiles } from '../../utils/importAudio';
 import { LayoutToolbar } from '../layout/LayoutToolbar';
 
 export function Toolbar() {
@@ -23,20 +23,37 @@ export function Toolbar() {
   const { isRecording, level, startRecording, stopRecording } = useRecorder();
   const navigateChunk = useProjectStore((s) => s.navigateChunk);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importAsSubsections, setImportAsSubsections] = useState(false);
+  const [showImportDropdown, setShowImportDropdown] = useState(false);
 
   const selectedIds = Array.from(selection.selectedChunkIds);
+
+  const triggerImport = useCallback((asSubsections: boolean) => {
+    setImportAsSubsections(asSubsections);
+    setShowImportDropdown(false);
+    setTimeout(() => fileInputRef.current?.click(), 0);
+  }, []);
 
   const handleImport = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
-      if (!files) return;
+      if (!files || files.length === 0) return;
 
-      for (const file of Array.from(files)) {
-        await importAudioFile(file);
-      }
+      // Determine current section context for subsection imports
+      const store = useProjectStore.getState();
+      const currentChunk = store.project.chunks.find((c) => c.id === store.playback.currentChunkId);
+      const currentSectionId = currentChunk?.sectionId
+        ?? store.playback.insertionPoint?.sectionId;
+
+      await importMultipleFiles(Array.from(files), {
+        parentId: importAsSubsections ? (currentSectionId ?? null) : null,
+        afterSectionId: currentSectionId ?? undefined,
+        asSubsections: importAsSubsections,
+      });
+
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
-    []
+    [importAsSubsections]
   );
 
   const handleSplit = () => {
@@ -112,12 +129,51 @@ export function Toolbar() {
 
       <Divider />
 
-      {/* Import */}
-      <ToolbarButton
-        icon={<Import size={16} />}
-        label="Import"
-        onClick={() => fileInputRef.current?.click()}
-      />
+      {/* Import — split button with dropdown */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <ToolbarButton
+          icon={<Import size={16} />}
+          label="Import"
+          onClick={() => triggerImport(false)}
+        />
+        <button
+          onClick={() => setShowImportDropdown((v) => !v)}
+          title="Import options"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '5px 2px',
+            backgroundColor: 'transparent',
+            border: '1px solid transparent',
+            borderRadius: '5px',
+            color: '#a0a0b0',
+            cursor: 'pointer',
+            marginLeft: '-4px',
+          }}
+        >
+          <ChevronDown size={12} />
+        </button>
+        {showImportDropdown && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              backgroundColor: '#1e1e2e',
+              border: '1px solid #2a2a3e',
+              borderRadius: '6px',
+              padding: '4px 0',
+              minWidth: '180px',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+              zIndex: 1000,
+            }}
+            onMouseLeave={() => setShowImportDropdown(false)}
+          >
+            <DropdownItem label="Import as Section(s)" onClick={() => triggerImport(false)} />
+            <DropdownItem label="Import as Subsection(s)" onClick={() => triggerImport(true)} />
+          </div>
+        )}
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -260,10 +316,69 @@ export function Toolbar() {
             color: '#606070',
           }}
         >
-          {selectedIds.length} selected
+          {selectedIds.length} chunk{selectedIds.length !== 1 ? 's' : ''} selected
+          {selectedIds.length >= 2 && <span style={{ color: '#505060' }}> (m to merge)</span>}
         </span>
       )}
+      <SectionSelectionInfo />
     </div>
+  );
+}
+
+function SectionSelectionInfo() {
+  const selectedSectionIds = useProjectStore((s) => s.selection.selectedSectionIds);
+  const mergeMultipleSections = useProjectStore((s) => s.mergeMultipleSections);
+  const clearSectionSelection = useProjectStore((s) => s.clearSectionSelection);
+  const count = selectedSectionIds.size;
+
+  if (count === 0) return null;
+
+  return (
+    <span
+      style={{
+        fontSize: '11px',
+        color: '#3B82F6',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+      }}
+    >
+      {count} section{count !== 1 ? 's' : ''} selected
+      {count >= 2 && (
+        <>
+          <button
+            onClick={() => {
+              mergeMultipleSections(Array.from(selectedSectionIds));
+              clearSectionSelection();
+            }}
+            style={{
+              fontSize: '11px',
+              color: '#93c5fd',
+              background: 'rgba(59,130,246,0.15)',
+              border: '1px solid rgba(59,130,246,0.3)',
+              borderRadius: '4px',
+              padding: '2px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            Merge (Shift+M)
+          </button>
+        </>
+      )}
+      <button
+        onClick={clearSectionSelection}
+        style={{
+          fontSize: '10px',
+          color: '#606070',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '2px',
+        }}
+      >
+        Clear
+      </button>
+    </span>
   );
 }
 
@@ -328,6 +443,29 @@ function ToolbarButton({
     >
       {icon}
       <span>{label}</span>
+    </button>
+  );
+}
+
+function DropdownItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'block',
+        width: '100%',
+        padding: '6px 14px',
+        background: 'none',
+        border: 'none',
+        color: '#e0e0e0',
+        fontSize: '12px',
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
+      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = '#2a2a3e'; }}
+      onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = 'transparent'; }}
+    >
+      {label}
     </button>
   );
 }

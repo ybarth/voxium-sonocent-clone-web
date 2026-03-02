@@ -1,4 +1,5 @@
 import type { Chunk, Section } from '../types';
+import { getFlatSectionOrder } from './sectionTree';
 
 /**
  * PlaybackEngine manages Web Audio API playback of chunks.
@@ -34,12 +35,15 @@ export class PlaybackEngine {
   }
 
   setChunks(chunks: Chunk[], sections: Section[]) {
-    const sectionOrder = new Map(sections.map((s) => [s.id, s.orderIndex]));
+    const activeSections = sections.filter(s => (s.status ?? 'active') === 'active');
+    const flatOrder = getFlatSectionOrder(activeSections);
+    const sectionPosition = new Map(flatOrder.map((s, i) => [s.id, i]));
+    const activeSectionIds = new Set(flatOrder.map(s => s.id));
     this.orderedChunks = [...chunks]
-      .filter((c) => !c.isDeleted)
+      .filter((c) => !c.isDeleted && activeSectionIds.has(c.sectionId))
       .sort((a, b) => {
-        const sA = sectionOrder.get(a.sectionId) ?? 0;
-        const sB = sectionOrder.get(b.sectionId) ?? 0;
+        const sA = sectionPosition.get(a.sectionId) ?? 0;
+        const sB = sectionPosition.get(b.sectionId) ?? 0;
         if (sA !== sB) return sA - sB;
         return a.orderIndex - b.orderIndex;
       });

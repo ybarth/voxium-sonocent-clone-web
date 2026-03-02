@@ -49,8 +49,6 @@ export function segmentAudio(
   const minSilenceFrames = Math.ceil(
     (minSilenceDurationMs / 1000) * sampleRate / frameSize
   );
-  const minChunkSamples = Math.floor((minChunkDurationMs / 1000) * sampleRate);
-
   // Compute RMS energy per frame
   const frames: { rms: number; isSilent: boolean }[] = [];
   for (let i = 0; i < channelData.length; i += frameSize) {

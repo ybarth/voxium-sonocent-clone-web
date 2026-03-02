@@ -5,6 +5,7 @@ import type {
   UndoAction, InsertionPoint, TakeState,
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS } from '../types';
+import { getFlatSectionOrder } from '../utils/sectionTree';
 
 // --- Cursor model ---
 // The cursor is a precise position: which chunk (or null if between/outside)
@@ -26,6 +27,8 @@ interface PlaybackState {
 interface SelectionState {
   selectedChunkIds: Set<string>;
   anchorChunkId: string | null; // For Shift-range selection: the chunk where the range started
+  selectedSectionIds: Set<string>;
+  anchorSectionId: string | null; // For Shift-range section selection
   focusedPaneId: 'audio' | 'text' | 'annotations' | 'file';
 }
 
@@ -52,10 +55,21 @@ interface ProjectStore {
   splitChunkAtCursor: () => void;
   mergeChunks: (ids: string[]) => void;
 
-  addSection: (name?: string) => Section;
+  addSection: (name?: string, options?: { parentId?: string | null; afterSectionId?: string }) => Section;
   renameSection: (id: string, name: string) => void;
   deleteSection: (id: string) => void;
   reorderSections: (orderedIds: string[]) => void;
+  toggleSectionCollapse: (id: string) => void;
+  moveSectionUp: (id: string) => void;
+  moveSectionDown: (id: string) => void;
+  mergeSections: (sourceId: string, targetId: string) => void;
+  mergeMultipleSections: (sectionIds: string[]) => void;
+  splitSectionAtChunk: (sectionId: string, chunkOrderIndex: number) => void;
+  nestSection: (sectionId: string, newParentId: string) => void;
+  unnestSection: (sectionId: string) => void;
+  removeSection: (id: string) => void;
+  restoreSection: (id: string) => void;
+  emptyTrash: () => void;
 
   // Selection — new model
   /** Click a chunk: plain click = single select; ctrl = toggle; shift = range from anchor */
@@ -64,6 +78,8 @@ interface ProjectStore {
   selectAll: () => void;
   clearSelection: () => void;
   setFocusedPane: (pane: SelectionState['focusedPaneId']) => void;
+  selectSection: (id: string, mode: 'replace' | 'toggle' | 'range') => void;
+  clearSectionSelection: () => void;
 
   // Insertion point & take
   placeCursorAtInsertionPoint: (sectionId: string, orderIndex: number) => void;
@@ -96,12 +112,15 @@ interface ProjectStore {
 }
 
 export function getOrderedChunks(chunks: Chunk[], sections: Section[]): Chunk[] {
-  const sectionOrder = new Map(sections.map((s) => [s.id, s.orderIndex]));
+  const activeSections = sections.filter(s => (s.status ?? 'active') === 'active');
+  const flatOrder = getFlatSectionOrder(activeSections);
+  const sectionPosition = new Map(flatOrder.map((s, i) => [s.id, i]));
+  const activeSectionIds = new Set(flatOrder.map(s => s.id));
   return [...chunks]
-    .filter(c => !c.isDeleted)
+    .filter(c => !c.isDeleted && activeSectionIds.has(c.sectionId))
     .sort((a, b) => {
-      const sA = sectionOrder.get(a.sectionId) ?? 0;
-      const sB = sectionOrder.get(b.sectionId) ?? 0;
+      const sA = sectionPosition.get(a.sectionId) ?? 0;
+      const sB = sectionPosition.get(b.sectionId) ?? 0;
       if (sA !== sB) return sA - sB;
       return a.orderIndex - b.orderIndex;
     });
@@ -112,6 +131,10 @@ const initialSection: Section = {
   name: 'Section 1',
   orderIndex: 0,
   backgroundColor: null,
+  parentId: null,
+  isCollapsed: false,
+  depth: 0,
+  status: 'active',
 };
 
 const initialProject: Project = {
@@ -150,6 +173,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   selection: {
     selectedChunkIds: new Set(),
     anchorChunkId: null,
+    selectedSectionIds: new Set(),
+    anchorSectionId: null,
     focusedPaneId: 'audio',
   },
 
@@ -349,19 +374,50 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
   },
 
-  addSection: (name) => {
+  addSection: (name, options) => {
     const store = get();
-    const maxOrder = Math.max(...store.project.sections.map((s) => s.orderIndex), -1);
+    const parentId = options?.parentId ?? null;
+    const afterSectionId = options?.afterSectionId;
+    const depth = parentId ? Math.min(1, (store.project.sections.find((s) => s.id === parentId)?.depth ?? 0) + 1) : 0;
+
+    // Determine orderIndex: insert after afterSectionId among active siblings, or at the end
+    let orderIndex: number;
+    const siblings = store.project.sections.filter((s) => s.parentId === parentId && (s.status ?? 'active') === 'active');
+    if (afterSectionId) {
+      const afterSection = siblings.find((s) => s.id === afterSectionId);
+      orderIndex = afterSection ? afterSection.orderIndex + 1 : Math.max(...siblings.map((s) => s.orderIndex), -1) + 1;
+    } else {
+      orderIndex = Math.max(...siblings.map((s) => s.orderIndex), -1) + 1;
+    }
+
     const section: Section = {
       id: uuid(),
-      name: name ?? `Section ${store.project.sections.length + 1}`,
-      orderIndex: maxOrder + 1,
+      name: name ?? `Section ${store.project.sections.filter(s => (s.status ?? 'active') === 'active').length + 1}`,
+      orderIndex,
       backgroundColor: null,
+      parentId,
+      isCollapsed: false,
+      depth,
+      status: 'active',
     };
+
+    // Bump sibling orderIndexes that are >= the new orderIndex (when inserting in the middle)
+    const updatedSections = afterSectionId
+      ? store.project.sections.map((s) =>
+          s.parentId === parentId && s.orderIndex >= orderIndex
+            ? { ...s, orderIndex: s.orderIndex + 1 }
+            : s
+        )
+      : store.project.sections;
+
     store.pushUndo('add-section');
     const isRecording = store.playback.isRecording;
     set((s) => ({
-      project: { ...s.project, sections: [...s.project.sections, section], updatedAt: new Date() },
+      project: {
+        ...s.project,
+        sections: [...updatedSections, section],
+        updatedAt: new Date(),
+      },
       // During recording, redirect both insertion point and recording head to the new section
       ...(isRecording ? {
         playback: {
@@ -387,16 +443,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   deleteSection: (id) => {
-    if (get().project.sections.length <= 1) return;
+    // Must keep at least one active section
+    const activeSections = get().project.sections.filter(s => (s.status ?? 'active') === 'active');
+    if (activeSections.length <= 1) return;
     get().pushUndo('delete-section');
-    set((s) => ({
-      project: {
-        ...s.project,
-        sections: s.project.sections.filter((sec) => sec.id !== id),
-        chunks: s.project.chunks.map((c) => c.sectionId === id ? { ...c, isDeleted: true } : c),
-        updatedAt: new Date(),
-      },
-    }));
+    set((s) => {
+      const childIds = new Set(s.project.sections.filter(sec => sec.parentId === id).map(sec => sec.id));
+      return {
+        project: {
+          ...s.project,
+          sections: s.project.sections.map((sec) =>
+            sec.id === id || childIds.has(sec.id)
+              ? { ...sec, status: 'trashed' as const }
+              : sec
+          ),
+          updatedAt: new Date(),
+        },
+      };
+    });
   },
 
   reorderSections: (orderedIds) =>
@@ -410,13 +474,364 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       },
     })),
 
+  toggleSectionCollapse: (id) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) =>
+          sec.id === id ? { ...sec, isCollapsed: !sec.isCollapsed } : sec
+        ),
+        updatedAt: new Date(),
+      },
+    })),
+
+  moveSectionUp: (id) => {
+    const { project } = get();
+    const section = project.sections.find((s) => s.id === id);
+    if (!section) return;
+    const siblings = project.sections
+      .filter((s) => s.parentId === section.parentId && (s.status ?? 'active') === 'active')
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    const idx = siblings.findIndex((s) => s.id === id);
+    if (idx <= 0) return;
+    const prev = siblings[idx - 1];
+    get().pushUndo('reorder-sections');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) => {
+          if (sec.id === id) return { ...sec, orderIndex: prev.orderIndex };
+          if (sec.id === prev.id) return { ...sec, orderIndex: section.orderIndex };
+          return sec;
+        }),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  moveSectionDown: (id) => {
+    const { project } = get();
+    const section = project.sections.find((s) => s.id === id);
+    if (!section) return;
+    const siblings = project.sections
+      .filter((s) => s.parentId === section.parentId && (s.status ?? 'active') === 'active')
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    const idx = siblings.findIndex((s) => s.id === id);
+    if (idx >= siblings.length - 1) return;
+    const next = siblings[idx + 1];
+    get().pushUndo('reorder-sections');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) => {
+          if (sec.id === id) return { ...sec, orderIndex: next.orderIndex };
+          if (sec.id === next.id) return { ...sec, orderIndex: section.orderIndex };
+          return sec;
+        }),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  mergeSections: (sourceId, targetId) => {
+    const { project } = get();
+    const targetChunks = project.chunks.filter((c) => c.sectionId === targetId && !c.isDeleted);
+    const maxTargetOrder = targetChunks.length > 0
+      ? Math.max(...targetChunks.map((c) => c.orderIndex))
+      : -1;
+
+    get().pushUndo('merge-sections');
+    set((s) => {
+      // Move source chunks to target, appending after existing
+      const updatedChunks = s.project.chunks.map((c) => {
+        if (c.sectionId === sourceId && !c.isDeleted) {
+          return { ...c, sectionId: targetId, orderIndex: maxTargetOrder + 1 + c.orderIndex };
+        }
+        return c;
+      });
+
+      // Reparent source's children to target's parent
+      const source = s.project.sections.find((sec) => sec.id === sourceId);
+      const updatedSections = s.project.sections
+        .map((sec) => {
+          if (sec.parentId === sourceId) {
+            return { ...sec, parentId: source?.parentId ?? null, depth: source?.depth ?? 0 };
+          }
+          return sec;
+        })
+        .filter((sec) => sec.id !== sourceId);
+
+      return {
+        project: { ...s.project, chunks: updatedChunks, sections: updatedSections, updatedAt: new Date() },
+      };
+    });
+  },
+
+  mergeMultipleSections: (sectionIds) => {
+    if (sectionIds.length < 2) return;
+    const { project } = get();
+
+    // Order the given IDs by their display position (flat section order, active only)
+    const activeSections = project.sections.filter(s => (s.status ?? 'active') === 'active');
+    const flatOrder = getFlatSectionOrder(activeSections);
+    const positionMap = new Map(flatOrder.map((s, i) => [s.id, i]));
+    const ordered = [...sectionIds].sort((a, b) => (positionMap.get(a) ?? 0) - (positionMap.get(b) ?? 0));
+
+    const targetId = ordered[0]; // keep the first one
+    const sourcesToMerge = ordered.slice(1);
+
+    get().pushUndo('merge-sections');
+    set((s) => {
+      let chunks = [...s.project.chunks];
+      let sections = [...s.project.sections];
+
+      // Merge each source into target sequentially
+      for (const sourceId of sourcesToMerge) {
+        const targetChunks = chunks.filter((c) => c.sectionId === targetId && !c.isDeleted);
+        const maxOrder = targetChunks.length > 0
+          ? Math.max(...targetChunks.map((c) => c.orderIndex))
+          : -1;
+
+        // Move source chunks to target
+        chunks = chunks.map((c) => {
+          if (c.sectionId === sourceId && !c.isDeleted) {
+            return { ...c, sectionId: targetId, orderIndex: maxOrder + 1 + c.orderIndex };
+          }
+          return c;
+        });
+
+        // Reparent source's children
+        const source = sections.find((sec) => sec.id === sourceId);
+        sections = sections
+          .map((sec) => {
+            if (sec.parentId === sourceId) {
+              return { ...sec, parentId: source?.parentId ?? null, depth: source?.depth ?? 0 };
+            }
+            return sec;
+          })
+          .filter((sec) => sec.id !== sourceId);
+      }
+
+      return {
+        project: { ...s.project, chunks, sections, updatedAt: new Date() },
+      };
+    });
+  },
+
+  splitSectionAtChunk: (sectionId, chunkOrderIndex) => {
+    const { project } = get();
+    const section = project.sections.find((s) => s.id === sectionId);
+    if (!section) return;
+
+    get().pushUndo('split-section');
+    const newSectionId = uuid();
+    const newSection: Section = {
+      id: newSectionId,
+      name: `${section.name} (cont.)`,
+      orderIndex: section.orderIndex + 0.5, // Will be renumbered
+      backgroundColor: section.backgroundColor,
+      parentId: section.parentId,
+      isCollapsed: false,
+      depth: section.depth,
+      status: 'active',
+    };
+
+    set((s) => {
+      // Move chunks at/after chunkOrderIndex to the new section
+      const updatedChunks = s.project.chunks.map((c) => {
+        if (c.sectionId === sectionId && !c.isDeleted && c.orderIndex >= chunkOrderIndex) {
+          return { ...c, sectionId: newSectionId, orderIndex: c.orderIndex - chunkOrderIndex };
+        }
+        return c;
+      });
+
+      // Insert new section and renumber siblings
+      const siblings = [...s.project.sections, newSection]
+        .filter((sec) => sec.parentId === section.parentId)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+      const siblingOrder = new Map(siblings.map((sec, i) => [sec.id, i]));
+
+      const updatedSections = [...s.project.sections, newSection].map((sec) => {
+        const newOrder = siblingOrder.get(sec.id);
+        return newOrder !== undefined && sec.parentId === section.parentId
+          ? { ...sec, orderIndex: newOrder }
+          : sec;
+      });
+
+      return {
+        project: { ...s.project, chunks: updatedChunks, sections: updatedSections, updatedAt: new Date() },
+      };
+    });
+  },
+
+  nestSection: (sectionId, newParentId) => {
+    const { project } = get();
+    const section = project.sections.find((s) => s.id === sectionId);
+    const parent = project.sections.find((s) => s.id === newParentId);
+    if (!section || !parent) return;
+    // Guard: max depth 1, no self-nesting
+    if (parent.depth >= 1 || sectionId === newParentId) return;
+
+    get().pushUndo('nest-section');
+    set((s) => {
+      const newChildren = s.project.sections.filter((sec) => sec.parentId === newParentId);
+      const maxOrder = newChildren.length > 0 ? Math.max(...newChildren.map((c) => c.orderIndex)) : -1;
+      return {
+        project: {
+          ...s.project,
+          sections: s.project.sections.map((sec) =>
+            sec.id === sectionId
+              ? { ...sec, parentId: newParentId, depth: parent.depth + 1, orderIndex: maxOrder + 1 }
+              : sec
+          ),
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  unnestSection: (sectionId) => {
+    const { project } = get();
+    const section = project.sections.find((s) => s.id === sectionId);
+    if (!section || !section.parentId) return;
+
+    const parent = project.sections.find((s) => s.id === section.parentId);
+    if (!parent) return;
+
+    get().pushUndo('unnest-section');
+    set((s) => {
+      // Move to grandparent level, insert after old parent in sibling order
+      const grandparentId = parent.parentId;
+      const grandparentChildren = s.project.sections
+        .filter((sec) => sec.parentId === grandparentId)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+      const parentIdx = grandparentChildren.findIndex((sec) => sec.id === parent.id);
+      const insertOrder = parentIdx >= 0 ? grandparentChildren[parentIdx].orderIndex + 0.5 : 999;
+
+      // Renumber grandparent siblings
+      const updated = s.project.sections.map((sec) =>
+        sec.id === sectionId
+          ? { ...sec, parentId: grandparentId, depth: parent.depth, orderIndex: insertOrder }
+          : sec
+      );
+
+      // Renumber siblings at grandparent level
+      const siblings = updated
+        .filter((sec) => sec.parentId === grandparentId)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+      const siblingOrder = new Map(siblings.map((sec, i) => [sec.id, i]));
+
+      return {
+        project: {
+          ...s.project,
+          sections: updated.map((sec) => {
+            const newOrder = siblingOrder.get(sec.id);
+            return newOrder !== undefined && sec.parentId === grandparentId
+              ? { ...sec, orderIndex: newOrder }
+              : sec;
+          }),
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  removeSection: (id) => {
+    // Must keep at least one active section
+    const activeSections = get().project.sections.filter(s => (s.status ?? 'active') === 'active');
+    if (activeSections.length <= 1) return;
+    get().pushUndo('remove-section');
+    set((s) => {
+      const childIds = new Set(s.project.sections.filter(sec => sec.parentId === id).map(sec => sec.id));
+      return {
+        project: {
+          ...s.project,
+          sections: s.project.sections.map((sec) =>
+            sec.id === id || childIds.has(sec.id)
+              ? { ...sec, status: 'removed' as const }
+              : sec
+          ),
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  restoreSection: (id) => {
+    get().pushUndo('restore-section');
+    set((s) => {
+      const section = s.project.sections.find(sec => sec.id === id);
+      if (!section) return s;
+
+      // If restoring a child whose parent is not active, make it top-level
+      const parent = section.parentId
+        ? s.project.sections.find(sec => sec.id === section.parentId)
+        : null;
+      const parentIsActive = parent ? (parent.status ?? 'active') === 'active' : true;
+
+      // Find a good orderIndex among active siblings
+      const targetParentId = parentIsActive ? section.parentId : null;
+      const activeSiblings = s.project.sections
+        .filter(sec => sec.parentId === targetParentId && (sec.status ?? 'active') === 'active');
+      const maxOrder = activeSiblings.length > 0
+        ? Math.max(...activeSiblings.map(sec => sec.orderIndex))
+        : -1;
+
+      // Also restore children of this section
+      const childIds = new Set(s.project.sections.filter(sec => sec.parentId === id).map(sec => sec.id));
+
+      return {
+        project: {
+          ...s.project,
+          sections: s.project.sections.map((sec) => {
+            if (sec.id === id) {
+              return {
+                ...sec,
+                status: 'active' as const,
+                parentId: targetParentId,
+                depth: targetParentId ? 1 : 0,
+                orderIndex: maxOrder + 1,
+              };
+            }
+            if (childIds.has(sec.id)) {
+              return { ...sec, status: 'active' as const };
+            }
+            return sec;
+          }),
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  emptyTrash: () => {
+    const trashedIds = new Set(
+      get().project.sections
+        .filter(s => (s.status ?? 'active') === 'trashed')
+        .map(s => s.id)
+    );
+    if (trashedIds.size === 0) return;
+    get().pushUndo('empty-trash');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.filter(sec => !trashedIds.has(sec.id)),
+        chunks: s.project.chunks.filter(c => !trashedIds.has(c.sectionId)),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
   // --- Selection with anchor-based range ---
   selectChunk: (id, mode) =>
     set((s) => {
+      // Clear section selection when selecting chunks
+      const baseClear = { selectedSectionIds: new Set<string>(), anchorSectionId: null };
       if (mode === 'replace') {
         return {
           selection: {
             ...s.selection,
+            ...baseClear,
             selectedChunkIds: new Set([id]),
             anchorChunkId: id,
           },
@@ -429,6 +844,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         return {
           selection: {
             ...s.selection,
+            ...baseClear,
             selectedChunkIds: newSet,
             anchorChunkId: id,
           },
@@ -438,20 +854,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const anchor = s.selection.anchorChunkId;
       if (!anchor) {
         return {
-          selection: { ...s.selection, selectedChunkIds: new Set([id]), anchorChunkId: id },
+          selection: { ...s.selection, ...baseClear, selectedChunkIds: new Set([id]), anchorChunkId: id },
         };
       }
       const ordered = getOrderedChunks(s.project.chunks, s.project.sections);
       const fromIdx = ordered.findIndex((c) => c.id === anchor);
       const toIdx = ordered.findIndex((c) => c.id === id);
       if (fromIdx === -1 || toIdx === -1) {
-        return { selection: { ...s.selection, selectedChunkIds: new Set([id]), anchorChunkId: id } };
+        return { selection: { ...s.selection, ...baseClear, selectedChunkIds: new Set([id]), anchorChunkId: id } };
       }
       const start = Math.min(fromIdx, toIdx);
       const end = Math.max(fromIdx, toIdx);
       const ids = ordered.slice(start, end + 1).map((c) => c.id);
       return {
-        selection: { ...s.selection, selectedChunkIds: new Set(ids) },
+        selection: { ...s.selection, ...baseClear, selectedChunkIds: new Set(ids) },
         // Keep anchorChunkId unchanged for extending ranges
       };
     }),
@@ -479,6 +895,59 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   setFocusedPane: (pane) =>
     set((s) => ({ selection: { ...s.selection, focusedPaneId: pane } })),
+
+  // --- Section selection ---
+  selectSection: (id, mode) =>
+    set((s) => {
+      // Clear chunk selection when selecting sections
+      const baseClear = { selectedChunkIds: new Set<string>(), anchorChunkId: null };
+      if (mode === 'replace') {
+        return {
+          selection: {
+            ...s.selection,
+            ...baseClear,
+            selectedSectionIds: new Set([id]),
+            anchorSectionId: id,
+          },
+        };
+      }
+      if (mode === 'toggle') {
+        const newSet = new Set(s.selection.selectedSectionIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        return {
+          selection: {
+            ...s.selection,
+            ...baseClear,
+            selectedSectionIds: newSet,
+            anchorSectionId: id,
+          },
+        };
+      }
+      // mode === 'range'
+      const anchor = s.selection.anchorSectionId;
+      if (!anchor) {
+        return {
+          selection: { ...s.selection, ...baseClear, selectedSectionIds: new Set([id]), anchorSectionId: id },
+        };
+      }
+      const activeSections = s.project.sections.filter(sec => (sec.status ?? 'active') === 'active');
+      const ordered = getFlatSectionOrder(activeSections);
+      const fromIdx = ordered.findIndex((sec) => sec.id === anchor);
+      const toIdx = ordered.findIndex((sec) => sec.id === id);
+      if (fromIdx === -1 || toIdx === -1) {
+        return { selection: { ...s.selection, ...baseClear, selectedSectionIds: new Set([id]), anchorSectionId: id } };
+      }
+      const start = Math.min(fromIdx, toIdx);
+      const end = Math.max(fromIdx, toIdx);
+      const ids = ordered.slice(start, end + 1).map((sec) => sec.id);
+      return {
+        selection: { ...s.selection, ...baseClear, selectedSectionIds: new Set(ids) },
+      };
+    }),
+
+  clearSectionSelection: () =>
+    set((s) => ({ selection: { ...s.selection, selectedSectionIds: new Set(), anchorSectionId: null } })),
 
   // --- Insertion point & take ---
   placeCursorAtInsertionPoint: (sectionId, orderIndex) =>
@@ -528,7 +997,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ take: { chunkIds: [], originalPosition: null, moved: false } }),
 
   moveTakeToPosition: (sectionId, orderIndex) => {
-    const { take, project } = get();
+    const { take } = get();
     if (take.chunkIds.length === 0) return;
     get().pushUndo('move-take');
     set((s) => {
@@ -689,7 +1158,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   navigateSection: (direction) => {
     const { project, playback } = get();
-    const sections = [...project.sections].sort((a, b) => a.orderIndex - b.orderIndex);
+    const activeSections = project.sections.filter(s => (s.status ?? 'active') === 'active');
+    const sections = getFlatSectionOrder(activeSections);
     const currentChunk = project.chunks.find((c) => c.id === playback.currentChunkId);
     const currentSectionIdx = currentChunk
       ? sections.findIndex((s) => s.id === currentChunk.sectionId)

@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useProjectStore } from '../stores/projectStore';
 import { decodeAudioFile, segmentAudio } from '../utils/audioProcessing';
+import { getFlatSectionOrder } from '../utils/sectionTree';
 import type { Chunk } from '../types';
 
 interface SectionSpan {
@@ -86,8 +87,10 @@ export function useRecorder() {
       sectionId = ip.sectionId;
       orderIndex = ip.orderIndex;
     } else {
-      // Fallback: end of last section
-      sectionId = project.sections[project.sections.length - 1]?.id;
+      // Fallback: end of last active section in display order
+      const activeSections = project.sections.filter(s => (s.status ?? 'active') === 'active');
+      const orderedSections = getFlatSectionOrder(activeSections);
+      sectionId = orderedSections[orderedSections.length - 1]?.id ?? activeSections[0]?.id;
       const existingCount = sectionId
         ? project.chunks.filter((c) => c.sectionId === sectionId && !c.isDeleted).length
         : 0;
@@ -134,7 +137,6 @@ export function useRecorder() {
         // Update refs FIRST — this prevents recursive re-entry because
         // the freeze below triggers another subscribe call, and if the ref
         // isn't updated yet, the condition passes again causing an infinite loop.
-        const oldSectionId = insertionSectionRef.current;
         insertionSectionRef.current = newSectionId;
         insertionOrderRef.current = 0;
 
