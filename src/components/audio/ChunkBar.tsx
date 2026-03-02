@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import type { Chunk } from '../../types';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
@@ -21,7 +21,7 @@ const MIN_WIDTH = 15;
 const MAX_WIDTH = 800;
 const BASE_BAR_HEIGHT = 24;
 
-export function ChunkBar({
+export const ChunkBar = memo(function ChunkBar({
   chunk,
   chunkNumber,
   sectionChunkNumber,
@@ -133,7 +133,7 @@ export function ChunkBar({
         margin: `${2 * zoomLevel}px`,
         display: 'inline-block',
         verticalAlign: 'top',
-        transition: 'transform 0.15s, box-shadow 0.15s, width 0.1s, height 0.1s',
+        transition: 'transform 0.15s, box-shadow 0.15s, width 0.28s linear, height 0.1s',
         transform: isCurrent ? 'scale(1.05)' : 'none',
         boxShadow: isSelected
           ? `0 0 0 ${2 * zoomLevel}px #3B82F6, 0 0 ${6 * zoomLevel}px rgba(59,130,246,0.4)`
@@ -244,4 +244,4 @@ export function ChunkBar({
     </div>
 
   );
-}
+});

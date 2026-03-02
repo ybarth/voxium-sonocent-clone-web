@@ -33,7 +33,8 @@ export function segmentAudio(
     silenceThresholdDb: number;
     minSilenceDurationMs: number;
     minChunkDurationMs: number;
-  }
+  },
+  idPrefix?: string
 ): Chunk[] {
   const { silenceThresholdDb, minSilenceDurationMs, minChunkDurationMs } = options;
 
@@ -105,7 +106,7 @@ export function segmentAudio(
 
     if (endTime > prevTime) {
       chunks.push({
-        id: uuid(),
+        id: idPrefix ? `${idPrefix}-${chunks.length}` : uuid(),
         audioBufferId,
         startTime: prevTime,
         endTime,
@@ -122,7 +123,7 @@ export function segmentAudio(
   // If no chunks were created (e.g., very short audio), create one chunk for the whole thing
   if (chunks.length === 0 && buffer.duration > 0) {
     chunks.push({
-      id: uuid(),
+      id: idPrefix ? `${idPrefix}-0` : uuid(),
       audioBufferId,
       startTime: 0,
       endTime: buffer.duration,

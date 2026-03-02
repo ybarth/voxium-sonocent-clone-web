@@ -51,6 +51,7 @@ interface ProjectStore {
   setChunks: (chunks: Chunk[]) => void;
   addChunks: (chunks: Chunk[]) => void;
   replaceLiveChunks: (liveAudioBufferId: string, newChunks: Chunk[]) => void;
+  updateLiveRecording: (liveAudioBufferId: string, newChunks: Chunk[], recordingHead: InsertionPoint) => void;
   updateChunk: (id: string, updates: Partial<Chunk>) => void;
   deleteChunks: (ids: string[]) => void;
   colorChunks: (ids: string[], color: string | null) => void;
@@ -254,6 +255,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ],
         updatedAt: new Date(),
       },
+    })),
+
+  updateLiveRecording: (liveAudioBufferId, newChunks, recordingHead) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: [
+          ...s.project.chunks.filter((c) => c.audioBufferId !== liveAudioBufferId),
+          ...newChunks,
+        ],
+        updatedAt: new Date(),
+      },
+      playback: { ...s.playback, recordingHead },
     })),
 
   updateChunk: (id, updates) =>

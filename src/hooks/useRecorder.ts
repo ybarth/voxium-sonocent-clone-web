@@ -201,7 +201,8 @@ export function useRecorder() {
                 silenceThresholdDb: settings.silenceThresholdDb,
                 minSilenceDurationMs: settings.minSilenceDurationMs,
                 minChunkDurationMs: settings.minChunkDurationMs,
-              }
+              },
+              `live-${curLiveBufferId}`
             );
 
             // Only keep chunks that start at or after the current section's start time
@@ -211,12 +212,14 @@ export function useRecorder() {
               c.orderIndex = insertionOrderRef.current + i;
             });
 
-            const s = useProjectStore.getState();
-            s.replaceLiveChunks(curLiveBufferId, liveChunks);
-            s.setRecordingHead({
-              sectionId: curSection,
-              orderIndex: insertionOrderRef.current + liveChunks.length,
-            });
+            useProjectStore.getState().updateLiveRecording(
+              curLiveBufferId,
+              liveChunks,
+              {
+                sectionId: curSection,
+                orderIndex: insertionOrderRef.current + liveChunks.length,
+              }
+            );
             usingRealSegments = true;
             return;
           } catch {
@@ -231,7 +234,7 @@ export function useRecorder() {
           if (sectionElapsed < 0.2) return;
 
           const growingChunk: Chunk = {
-            id: uuid(),
+            id: `live-${curLiveBufferId}-0`,
             audioBufferId: curLiveBufferId,
             startTime: curSectionStart,
             endTime: totalElapsed,
@@ -242,12 +245,14 @@ export function useRecorder() {
             waveformData: null,
           };
 
-          const s = useProjectStore.getState();
-          s.replaceLiveChunks(curLiveBufferId, [growingChunk]);
-          s.setRecordingHead({
-            sectionId: curSection,
-            orderIndex: insertionOrderRef.current + 1,
-          });
+          useProjectStore.getState().updateLiveRecording(
+            curLiveBufferId,
+            [growingChunk],
+            {
+              sectionId: curSection,
+              orderIndex: insertionOrderRef.current + 1,
+            }
+          );
         }
       } finally {
         isProcessing = false;

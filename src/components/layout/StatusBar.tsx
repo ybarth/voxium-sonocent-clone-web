@@ -59,7 +59,7 @@ export function StatusBar() {
       <span>Duration: {formatTime(totalDuration)}</span>
       <span>{project.settings.playbackSpeed}x</span>
       <span>{project.settings.visualMode === 'waveform' ? 'Waveform' : 'Flat'}</span>
-      <span style={{ opacity: 0.5 }}>Build 11</span>
+      <span style={{ opacity: 0.5 }}>Build 12</span>
     </div>
   );
 }
