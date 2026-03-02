@@ -6,6 +6,7 @@ import { ContextMenu } from './ContextMenu';
 import { TakeBanner } from './TakeBanner';
 import { importMultipleFiles } from '../../utils/importAudio';
 import { getFlatSectionOrder, hasCollapsedAncestor } from '../../utils/sectionTree';
+import { useModifierKeys, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
 
 interface ContextMenuState {
   x: number;
@@ -22,6 +23,8 @@ export function AudioPane() {
   const placeCursorInChunk = useProjectStore((s) => s.placeCursorInChunk);
 
   const { seekToChunk, cursorPosition } = usePlayback();
+
+  const modifierMode = useModifierKeys();
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -220,6 +223,7 @@ export function AudioPane() {
               currentChunkId={currentChunkId}
               cursorPosition={cursorPosition}
               insertionPoint={insertionPoint}
+              modifierMode={modifierMode}
               onChunkClick={handleChunkClick}
               onContextMenu={handleContextMenu}
               hasChildren={sectionHasChildren.get(section.id) ?? false}
@@ -265,6 +269,25 @@ export function AudioPane() {
           </div>
         )}
       </div>
+
+      {/* Modifier mode indicator */}
+      {modifierMode !== 'navigate' && (
+        <div
+          style={{
+            padding: '3px 12px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: MODIFIER_MODE_META[modifierMode].color,
+            backgroundColor: 'rgba(0,0,0,0.3)',
+            borderTop: `1px solid ${MODIFIER_MODE_META[modifierMode].color}40`,
+            textAlign: 'center',
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+          }}
+        >
+          {MODIFIER_MODE_META[modifierMode].label} Mode
+        </div>
+      )}
 
       {contextMenu && (
         <ContextMenu

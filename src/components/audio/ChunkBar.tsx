@@ -2,6 +2,7 @@ import { useRef, useMemo, useEffect, useCallback } from 'react';
 import type { Chunk } from '../../types';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
+import { type ModifierMode, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
 
 interface ChunkBarProps {
   chunk: Chunk;
@@ -10,6 +11,7 @@ interface ChunkBarProps {
   isSelected: boolean;
   isCurrent: boolean;
   cursorPosition: number; // 0-1
+  modifierMode: ModifierMode;
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, sectionId: string, orderIndex: number) => void;
 }
@@ -26,6 +28,7 @@ export function ChunkBar({
   isSelected,
   isCurrent,
   cursorPosition,
+  modifierMode,
   onChunkClick,
   onContextMenu,
 }: ChunkBarProps) {
@@ -126,7 +129,7 @@ export function ChunkBar({
         backgroundColor: visualMode === 'flat' ? color : bgColor,
         borderRadius: `${3 * zoomLevel}px`,
         position: 'relative',
-        cursor: 'text', // I-beam cursor for precise placement
+        cursor: MODIFIER_MODE_META[modifierMode].cursor,
         margin: `${2 * zoomLevel}px`,
         display: 'inline-block',
         verticalAlign: 'top',
@@ -178,10 +181,24 @@ export function ChunkBar({
             left: `${cursorPosition * 100}%`,
             width: `${Math.max(1, 2 * zoomLevel)}px`,
             height: '100%',
-            backgroundColor: '#F59E0B', // Amber — highly visible
-            boxShadow: `0 0 ${4 * zoomLevel}px rgba(245,158,11,0.8)`,
+            backgroundColor: MODIFIER_MODE_META[modifierMode].color,
+            boxShadow: `0 0 ${4 * zoomLevel}px ${MODIFIER_MODE_META[modifierMode].color}cc`,
             zIndex: 3,
             transition: 'left 0.03s linear',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Nudge grab indicator */}
+      {isSelected && modifierMode === 'nudge' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            border: `${Math.max(1, 2 * zoomLevel)}px dashed #F97316`,
+            borderRadius: `${3 * zoomLevel}px`,
+            zIndex: 4,
             pointerEvents: 'none',
           }}
         />

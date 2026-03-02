@@ -105,6 +105,22 @@ interface ProjectStore {
   navigateSection: (direction: 'prev' | 'next') => void;
   navigateToStart: () => void;
   navigateToEnd: () => void;
+  navigateToSectionStart: () => void;
+  navigateToSectionEnd: () => void;
+
+  // Intra-chunk cursor
+  scrubCursor: (delta: number) => void;
+
+  // Nudge / reorder
+  nudgeChunks: (ids: string[], direction: -1 | 1) => void;
+  nudgeChunksToEdge: (ids: string[], edge: 'start' | 'end') => void;
+  moveChunksToSection: (ids: string[], direction: 'prev' | 'next') => void;
+
+  // Editing extras
+  duplicateChunks: (ids: string[]) => void;
+
+  // Selection extras
+  invertSelection: () => void;
 
   pushUndo: (type: UndoAction['type']) => void;
   undo: () => void;
@@ -1214,6 +1230,270 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         selection: { ...s.selection, selectedChunkIds: new Set([last.id]), anchorChunkId: last.id },
       }));
     }
+  },
+
+  navigateToSectionStart: () => {
+    const { project, playback } = get();
+    const currentChunk = project.chunks.find(c => c.id === playback.currentChunkId);
+    if (!currentChunk) return;
+    const sectionChunks = getOrderedChunks(project.chunks, project.sections)
+      .filter(c => c.sectionId === currentChunk.sectionId);
+    if (sectionChunks.length > 0) {
+      const first = sectionChunks[0];
+      set((s) => ({
+        playback: { ...s.playback, currentChunkId: first.id, cursorTime: first.startTime, cursorPositionInChunk: 0 },
+        selection: { ...s.selection, selectedChunkIds: new Set([first.id]), anchorChunkId: first.id },
+      }));
+    }
+  },
+
+  navigateToSectionEnd: () => {
+    const { project, playback } = get();
+    const currentChunk = project.chunks.find(c => c.id === playback.currentChunkId);
+    if (!currentChunk) return;
+    const sectionChunks = getOrderedChunks(project.chunks, project.sections)
+      .filter(c => c.sectionId === currentChunk.sectionId);
+    if (sectionChunks.length > 0) {
+      const last = sectionChunks[sectionChunks.length - 1];
+      set((s) => ({
+        playback: { ...s.playback, currentChunkId: last.id, cursorTime: last.endTime, cursorPositionInChunk: 1 },
+        selection: { ...s.selection, selectedChunkIds: new Set([last.id]), anchorChunkId: last.id },
+      }));
+    }
+  },
+
+  // --- Intra-chunk cursor scrub ---
+  scrubCursor: (delta) => {
+    const { playback } = get();
+    if (!playback.currentChunkId) return;
+    const newPos = Math.max(0, Math.min(1, playback.cursorPositionInChunk + delta));
+    get().placeCursorInChunk(playback.currentChunkId, newPos);
+  },
+
+  // --- Nudge / reorder ---
+  nudgeChunks: (ids, direction) => {
+    if (ids.length === 0) return;
+    const { project } = get();
+    const selectedSet = new Set(ids);
+
+    // Group by section
+    const bySectionMap = new Map<string, Chunk[]>();
+    for (const chunk of project.chunks) {
+      if (!chunk.isDeleted) {
+        const arr = bySectionMap.get(chunk.sectionId) ?? [];
+        arr.push(chunk);
+        bySectionMap.set(chunk.sectionId, arr);
+      }
+    }
+
+    get().pushUndo('move');
+
+    const updatedChunks = [...project.chunks];
+    for (const [sectionId, sectionChunks] of bySectionMap) {
+      const sorted = sectionChunks.sort((a, b) => a.orderIndex - b.orderIndex);
+      const selectedInSection = sorted.filter(c => selectedSet.has(c.id));
+      if (selectedInSection.length === 0) continue;
+
+      const indices = selectedInSection.map(c => sorted.indexOf(c));
+      if (direction === -1 && indices[0] === 0) continue;
+      if (direction === 1 && indices[indices.length - 1] === sorted.length - 1) continue;
+
+      // Swap the block with the adjacent element
+      if (direction === -1) {
+        const swapIdx = indices[0] - 1;
+        const swapChunk = sorted[swapIdx];
+        // Move swap chunk after the selected block
+        const newOrder = sorted.filter((_, i) => i !== swapIdx);
+        newOrder.splice(indices[0] - 1 + selectedInSection.length, 0, swapChunk);
+        newOrder.forEach((c, i) => {
+          const idx = updatedChunks.findIndex(uc => uc.id === c.id);
+          if (idx !== -1) updatedChunks[idx] = { ...updatedChunks[idx], orderIndex: i };
+        });
+      } else {
+        const swapIdx = indices[indices.length - 1] + 1;
+        const swapChunk = sorted[swapIdx];
+        // Move swap chunk before the selected block
+        const newOrder = sorted.filter((_, i) => i !== swapIdx);
+        newOrder.splice(indices[0], 0, swapChunk);
+        newOrder.forEach((c, i) => {
+          const idx = updatedChunks.findIndex(uc => uc.id === c.id);
+          if (idx !== -1) updatedChunks[idx] = { ...updatedChunks[idx], orderIndex: i };
+        });
+      }
+    }
+
+    set((s) => ({
+      project: { ...s.project, chunks: updatedChunks, updatedAt: new Date() },
+    }));
+  },
+
+  nudgeChunksToEdge: (ids, edge) => {
+    if (ids.length === 0) return;
+    const { project } = get();
+    const selectedSet = new Set(ids);
+
+    get().pushUndo('move');
+
+    const updatedChunks = [...project.chunks];
+    // Group chunks by section
+    const bySectionMap = new Map<string, Chunk[]>();
+    for (const chunk of project.chunks) {
+      if (!chunk.isDeleted) {
+        const arr = bySectionMap.get(chunk.sectionId) ?? [];
+        arr.push(chunk);
+        bySectionMap.set(chunk.sectionId, arr);
+      }
+    }
+
+    for (const [_sectionId, sectionChunks] of bySectionMap) {
+      const sorted = sectionChunks.sort((a, b) => a.orderIndex - b.orderIndex);
+      const selected = sorted.filter(c => selectedSet.has(c.id));
+      const unselected = sorted.filter(c => !selectedSet.has(c.id));
+      if (selected.length === 0) continue;
+
+      const newOrder = edge === 'start'
+        ? [...selected, ...unselected]
+        : [...unselected, ...selected];
+
+      newOrder.forEach((c, i) => {
+        const idx = updatedChunks.findIndex(uc => uc.id === c.id);
+        if (idx !== -1) updatedChunks[idx] = { ...updatedChunks[idx], orderIndex: i };
+      });
+    }
+
+    set((s) => ({
+      project: { ...s.project, chunks: updatedChunks, updatedAt: new Date() },
+    }));
+  },
+
+  moveChunksToSection: (ids, direction) => {
+    if (ids.length === 0) return;
+    const { project } = get();
+    const selectedSet = new Set(ids);
+    const activeSections = project.sections.filter(s => (s.status ?? 'active') === 'active');
+    const flatSections = getFlatSectionOrder(activeSections);
+
+    // Find which section the selected chunks are in (use first selected)
+    const firstSelected = project.chunks.find(c => selectedSet.has(c.id));
+    if (!firstSelected) return;
+    const currentSectionIdx = flatSections.findIndex(s => s.id === firstSelected.sectionId);
+    if (currentSectionIdx === -1) return;
+
+    const targetIdx = direction === 'prev' ? currentSectionIdx - 1 : currentSectionIdx + 1;
+    if (targetIdx < 0 || targetIdx >= flatSections.length) return;
+    const targetSection = flatSections[targetIdx];
+
+    get().pushUndo('move');
+
+    // Get existing chunks in target section to find max orderIndex
+    const targetChunks = project.chunks.filter(
+      c => c.sectionId === targetSection.id && !c.isDeleted
+    );
+    const maxOrder = targetChunks.length > 0
+      ? Math.max(...targetChunks.map(c => c.orderIndex))
+      : -1;
+
+    // Move selected chunks to target section
+    let nextOrder = maxOrder + 1;
+    const updatedChunks = project.chunks.map(c => {
+      if (selectedSet.has(c.id)) {
+        return { ...c, sectionId: targetSection.id, orderIndex: nextOrder++ };
+      }
+      return c;
+    });
+
+    // Renumber source section
+    const sourceId = firstSelected.sectionId;
+    const sourceRemaining = updatedChunks
+      .filter(c => c.sectionId === sourceId && !c.isDeleted && !selectedSet.has(c.id))
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    sourceRemaining.forEach((c, i) => {
+      const idx = updatedChunks.findIndex(uc => uc.id === c.id);
+      if (idx !== -1) updatedChunks[idx] = { ...updatedChunks[idx], orderIndex: i };
+    });
+
+    set((s) => ({
+      project: { ...s.project, chunks: updatedChunks, updatedAt: new Date() },
+    }));
+  },
+
+  // --- Duplicate ---
+  duplicateChunks: (ids) => {
+    if (ids.length === 0) return;
+    const { project } = get();
+
+    get().pushUndo('move');
+
+    const toDuplicate = project.chunks.filter(c => ids.includes(c.id) && !c.isDeleted);
+    if (toDuplicate.length === 0) return;
+
+    // Group by section, clone after the originals
+    const newChunks: Chunk[] = [];
+    const updatedChunks = [...project.chunks];
+
+    // For each section, find selected chunks and insert clones after them
+    const bySectionMap = new Map<string, Chunk[]>();
+    for (const c of toDuplicate) {
+      const arr = bySectionMap.get(c.sectionId) ?? [];
+      arr.push(c);
+      bySectionMap.set(c.sectionId, arr);
+    }
+
+    for (const [sectionId, selected] of bySectionMap) {
+      const sorted = selected.sort((a, b) => a.orderIndex - b.orderIndex);
+      const maxOrderInSelected = sorted[sorted.length - 1].orderIndex;
+
+      // Bump all chunks after the selected block
+      for (let i = 0; i < updatedChunks.length; i++) {
+        const c = updatedChunks[i];
+        if (c.sectionId === sectionId && !c.isDeleted && c.orderIndex > maxOrderInSelected) {
+          updatedChunks[i] = { ...c, orderIndex: c.orderIndex + sorted.length };
+        }
+      }
+
+      // Create clones right after the originals
+      sorted.forEach((orig, i) => {
+        newChunks.push({
+          ...orig,
+          id: uuid(),
+          orderIndex: maxOrderInSelected + 1 + i,
+          waveformData: null,
+        });
+      });
+    }
+
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: [...updatedChunks, ...newChunks],
+        updatedAt: new Date(),
+      },
+      selection: {
+        ...s.selection,
+        selectedChunkIds: new Set(newChunks.map(c => c.id)),
+        anchorChunkId: newChunks[0]?.id ?? null,
+      },
+    }));
+  },
+
+  // --- Invert selection ---
+  invertSelection: () => {
+    const { project, playback, selection } = get();
+    const currentChunk = project.chunks.find(c => c.id === playback.currentChunkId);
+    if (!currentChunk) return;
+
+    const sectionChunks = project.chunks.filter(
+      c => c.sectionId === currentChunk.sectionId && !c.isDeleted
+    );
+    const newSelected = new Set<string>();
+    for (const c of sectionChunks) {
+      if (!selection.selectedChunkIds.has(c.id)) {
+        newSelected.add(c.id);
+      }
+    }
+    set((s) => ({
+      selection: { ...s.selection, selectedChunkIds: newSelected, anchorChunkId: null },
+    }));
   },
 
   pushUndo: (type) =>

@@ -6,6 +6,7 @@ import {
 import type { Section, Chunk, InsertionPoint } from '../../types';
 import { ChunkBar } from './ChunkBar';
 import { useProjectStore } from '../../stores/projectStore';
+import type { ModifierMode } from '../../hooks/useModifierKeys';
 
 interface SectionViewProps {
   section: Section;
@@ -14,6 +15,7 @@ interface SectionViewProps {
   currentChunkId: string | null;
   cursorPosition: number;
   insertionPoint: InsertionPoint | null;
+  modifierMode: ModifierMode;
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent, sectionId: string, orderIndex: number) => void;
   hasChildren?: boolean;
@@ -31,6 +33,7 @@ export function SectionView({
   currentChunkId,
   cursorPosition,
   insertionPoint,
+  modifierMode,
   onChunkClick,
   onContextMenu,
   hasChildren = false,
@@ -383,6 +386,7 @@ export function SectionView({
                     isSelected={selectedChunkIds.has(chunk.id)}
                     isCurrent={chunk.id === currentChunkId}
                     cursorPosition={chunk.id === currentChunkId ? cursorPosition : 0}
+                    modifierMode={modifierMode}
                     onChunkClick={onChunkClick}
                     onContextMenu={handleChunkContextMenu}
                   />

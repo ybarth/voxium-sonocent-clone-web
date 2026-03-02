@@ -2,13 +2,16 @@ import { useRef, useCallback, useState } from 'react';
 import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
-  ZoomIn, ZoomOut, ChevronDown
+  ZoomIn, ZoomOut, ChevronDown, Settings, MessageSquare, MessageSquareOff,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
 import { useRecorder } from '../../hooks/useRecorder';
 import { importMultipleFiles } from '../../utils/importAudio';
 import { LayoutToolbar } from '../layout/LayoutToolbar';
+import { executeCommand } from '../../commands/commandExecutor';
+import { useKeybindingStore } from '../../stores/keybindingStore';
+import { Tooltip } from '../Tooltip';
 
 export function Toolbar() {
   const project = useProjectStore((s) => s.project);
@@ -18,6 +21,9 @@ export function Toolbar() {
   const deleteChunks = useProjectStore((s) => s.deleteChunks);
   const splitChunkAtCursor = useProjectStore((s) => s.splitChunkAtCursor);
   const mergeChunks = useProjectStore((s) => s.mergeChunks);
+
+  const showTooltips = useKeybindingStore((s) => s.showTooltips);
+  const setShowTooltips = useKeybindingStore((s) => s.setShowTooltips);
 
   const { isPlaying, togglePlay, stop } = usePlayback();
   const { isRecording, level, startRecording, stopRecording } = useRecorder();
@@ -188,24 +194,28 @@ export function Toolbar() {
       {/* Transport */}
       <ToolbarButton
         icon={<SkipBack size={16} />}
-        label="Prev"
+        label="Previous Chunk"
         onClick={() => navigateChunk('prev')}
+        commandId="chunk.prev"
       />
       <ToolbarButton
         icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
         label={isPlaying ? 'Pause' : 'Play'}
         onClick={togglePlay}
+        commandId="transport.togglePlay"
         active={isPlaying}
       />
       <ToolbarButton
         icon={<Square size={16} />}
         label="Stop"
         onClick={stop}
+        commandId="transport.stop"
       />
       <ToolbarButton
         icon={<SkipForward size={16} />}
-        label="Next"
+        label="Next Chunk"
         onClick={() => navigateChunk('next')}
+        commandId="chunk.next"
       />
 
       {/* Speed */}
@@ -240,18 +250,21 @@ export function Toolbar() {
         label="Split"
         onClick={handleSplit}
         disabled={selectedIds.length !== 1}
+        commandId="edit.split"
       />
       <ToolbarButton
         icon={<Merge size={16} />}
         label="Merge"
         onClick={handleMerge}
         disabled={selectedIds.length < 2}
+        commandId="edit.merge"
       />
       <ToolbarButton
         icon={<Trash2 size={16} />}
         label="Delete"
         onClick={() => deleteChunks(selectedIds)}
         disabled={selectedIds.length === 0}
+        commandId="edit.delete"
       />
 
       <Divider />
@@ -281,6 +294,7 @@ export function Toolbar() {
               project.settings.visualMode === 'waveform' ? 'flat' : 'waveform',
           })
         }
+        commandId="view.toggleVisualMode"
       />
 
       <Divider />
@@ -288,22 +302,42 @@ export function Toolbar() {
       {/* Zoom */}
       <ToolbarButton
         icon={<ZoomOut size={14} />}
-        label="Out"
+        label="Zoom Out"
         onClick={() => handleZoom('out')}
+        commandId="view.zoomOut"
       />
       <div style={{ fontSize: '10px', color: '#606070', minWidth: '30px', textAlign: 'center' }}>
         {Math.round((project.settings.zoomLevel ?? 1.0) * 100)}%
       </div>
       <ToolbarButton
         icon={<ZoomIn size={14} />}
-        label="In"
+        label="Zoom In"
         onClick={() => handleZoom('in')}
+        commandId="view.zoomIn"
       />
 
       <Divider />
 
       {/* Layout controls */}
       <LayoutToolbar />
+
+      <Divider />
+
+      {/* Settings */}
+      <ToolbarButton
+        icon={<Settings size={14} />}
+        label="Settings"
+        onClick={() => executeCommand('app.openSettings')}
+        commandId="app.openSettings"
+      />
+
+      {/* Tooltip toggle */}
+      <ToolbarToggle
+        icon={showTooltips ? <MessageSquare size={14} /> : <MessageSquareOff size={14} />}
+        label={showTooltips ? 'Tooltips On' : 'Tooltips Off'}
+        active={showTooltips}
+        onClick={() => setShowTooltips(!showTooltips)}
+      />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
@@ -389,6 +423,8 @@ function ToolbarButton({
   active = false,
   danger = false,
   disabled = false,
+  commandId,
+  shortcut,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -396,12 +432,15 @@ function ToolbarButton({
   active?: boolean;
   danger?: boolean;
   disabled?: boolean;
+  /** Command ID to resolve keybinding from active preset */
+  commandId?: string;
+  /** Manual shortcut override (used when there's no command ID) */
+  shortcut?: string;
 }) {
-  return (
+  const btn = (
     <button
       onClick={onClick}
       disabled={disabled}
-      title={label}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -445,6 +484,12 @@ function ToolbarButton({
       <span>{label}</span>
     </button>
   );
+
+  return (
+    <Tooltip label={label} commandId={commandId} shortcut={shortcut}>
+      {btn}
+    </Tooltip>
+  );
 }
 
 function DropdownItem({ label, onClick }: { label: string; onClick: () => void }) {
@@ -466,6 +511,51 @@ function DropdownItem({ label, onClick }: { label: string; onClick: () => void }
       onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = 'transparent'; }}
     >
       {label}
+    </button>
+  );
+}
+
+function ToolbarToggle({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '5px 8px',
+        backgroundColor: active ? 'rgba(59,130,246,0.15)' : 'transparent',
+        border: '1px solid transparent',
+        borderRadius: '5px',
+        color: active ? '#60a5fa' : '#505060',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: 500,
+        transition: 'all 0.15s',
+      }}
+      onMouseEnter={(e) => {
+        (e.target as HTMLElement).style.backgroundColor = active
+          ? 'rgba(59,130,246,0.2)'
+          : '#1a1a2e';
+      }}
+      onMouseLeave={(e) => {
+        (e.target as HTMLElement).style.backgroundColor = active
+          ? 'rgba(59,130,246,0.15)'
+          : 'transparent';
+      }}
+    >
+      {icon}
     </button>
   );
 }
