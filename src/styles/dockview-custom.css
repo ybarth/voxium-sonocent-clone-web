@@ -1,0 +1,82 @@
+/* Dockview dark theme overrides to match Voxium's #0d0d18 palette */
+
+.dockview-theme-custom {
+  --dv-paneview-header-border-color: #1a1a2e;
+  --dv-tabs-and-actions-container-background-color: #0f0f1a;
+  --dv-activegroup-visiblepanel-tab-background-color: #0f0f1a;
+  --dv-activegroup-hiddenpanel-tab-background-color: #0a0a14;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #0f0f1a;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #0a0a14;
+  --dv-tab-divider-color: transparent;
+  --dv-activegroup-visiblepanel-tab-color: #e0e0e0;
+  --dv-activegroup-hiddenpanel-tab-color: #606070;
+  --dv-inactivegroup-visiblepanel-tab-color: #a0a0b0;
+  --dv-inactivegroup-hiddenpanel-tab-color: #606070;
+  --dv-separator-border: #1a1a2e;
+  --dv-background-color: #0d0d18;
+  --dv-group-view-background-color: #0d0d18;
+  --dv-drag-over-background-color: rgba(59, 130, 246, 0.1);
+  --dv-drag-over-border-color: #3b82f6;
+}
+
+/* Full-size container */
+.dockview-theme-custom {
+  height: 100%;
+  width: 100%;
+}
+
+/* Hide close buttons on tabs — panels are permanent */
+.dockview-theme-custom .dv-default-tab-action {
+  display: none !important;
+}
+
+/* Tab container — match pane header style */
+.dockview-theme-custom .dv-tabs-and-actions-container {
+  background-color: #0f0f1a !important;
+  min-height: 30px;
+}
+
+/* Individual tab styling */
+.dockview-theme-custom .dv-tab {
+  background-color: #0f0f1a !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.dockview-theme-custom .dv-tab.dv-activegroup-visiblepanel-tab {
+  background-color: #0f0f1a !important;
+}
+
+/* Remove default tab inner padding */
+.dockview-theme-custom .dv-default-tab {
+  padding: 0 !important;
+}
+
+/* Separator / resize handles between groups */
+.dockview-theme-custom .dv-resize-container > .dv-resize-handle-horizontal,
+.dockview-theme-custom .dv-resize-container > .dv-resize-handle-vertical {
+  background-color: #1a1a2e;
+  transition: background-color 0.15s;
+}
+
+.dockview-theme-custom .dv-resize-container > .dv-resize-handle-horizontal:hover,
+.dockview-theme-custom .dv-resize-container > .dv-resize-handle-vertical:hover {
+  background-color: #3b82f6;
+}
+
+/* Group content area */
+.dockview-theme-custom .dv-content-container {
+  background-color: #0d0d18;
+}
+
+/* Drag overlay styling */
+.dockview-theme-custom .dv-drop-target-dropzone {
+  border: 2px solid #3b82f6;
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+/* Watermark (shown when no panels) */
+.dockview-theme-custom .dv-watermark {
+  background-color: #0d0d18;
+  color: #606070;
+}

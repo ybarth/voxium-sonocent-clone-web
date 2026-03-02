@@ -8,6 +8,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
 import { useRecorder } from '../../hooks/useRecorder';
 import { importAudioFile } from '../../utils/importAudio';
+import { LayoutToolbar } from '../layout/LayoutToolbar';
 
 export function Toolbar() {
   const project = useProjectStore((s) => s.project);
@@ -242,6 +243,11 @@ export function Toolbar() {
         label="In"
         onClick={() => handleZoom('in')}
       />
+
+      <Divider />
+
+      {/* Layout controls */}
+      <LayoutToolbar />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />

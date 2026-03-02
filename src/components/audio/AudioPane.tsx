@@ -19,7 +19,6 @@ export function AudioPane() {
   const insertionPoint = useProjectStore((s) => s.playback.insertionPoint);
   const selectChunk = useProjectStore((s) => s.selectChunk);
   const placeCursorInChunk = useProjectStore((s) => s.placeCursorInChunk);
-  const setFocusedPane = useProjectStore((s) => s.setFocusedPane);
 
   const { seekToChunk, cursorPosition } = usePlayback();
 
@@ -75,7 +74,6 @@ export function AudioPane() {
 
   return (
     <div
-      onClick={() => setFocusedPane('audio')}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       style={{

@@ -1,18 +1,32 @@
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Panel,
   Group as PanelGroup,
   Separator as PanelResizeHandle,
+  type PanelImperativeHandle,
 } from 'react-resizable-panels';
-import { AudioPane } from '../audio/AudioPane';
 import { ColorKeySidebar } from '../sidebar/ColorKeySidebar';
 import { Toolbar } from '../toolbar/Toolbar';
 import { StatusBar } from './StatusBar';
-import { PlaceholderPane } from './PlaceholderPane';
-import { useProjectStore } from '../../stores/projectStore';
+import { DockviewLayout } from './DockviewLayout';
+import { useLayoutStore } from '../../stores/layoutStore';
 
 export function AppLayout() {
-  const focusedPaneId = useProjectStore((s) => s.selection.focusedPaneId);
-  const setFocusedPane = useProjectStore((s) => s.setFocusedPane);
+  const sidebarRef = useRef<PanelImperativeHandle>(null);
+  const setSidebarPanelApi = useLayoutStore((s) => s.setSidebarPanelApi);
+  const setSidebarCollapsed = useLayoutStore((s) => s.setSidebarCollapsed);
+
+  useEffect(() => {
+    if (sidebarRef.current) {
+      setSidebarPanelApi(sidebarRef.current);
+    }
+  }, [setSidebarPanelApi]);
+
+  const handleSidebarResize = useCallback(() => {
+    if (sidebarRef.current) {
+      setSidebarCollapsed(sidebarRef.current.isCollapsed());
+    }
+  }, [setSidebarCollapsed]);
 
   return (
     <div
@@ -32,7 +46,14 @@ export function AppLayout() {
 
       <PanelGroup orientation="horizontal" style={{ flex: 1, minHeight: 0 }}>
         {/* Left sidebar - Color Key */}
-        <Panel defaultSize="14%" minSize="120px" maxSize="30%">
+        <Panel
+          panelRef={sidebarRef}
+          defaultSize="14%"
+          minSize="120px"
+          maxSize="30%"
+          collapsible
+          onResize={handleSidebarResize}
+        >
           <div
             style={{
               height: '100%',
@@ -53,102 +74,9 @@ export function AppLayout() {
           }}
         />
 
-        {/* Main content area */}
-        <Panel defaultSize="62%" minSize="25%">
-          <PanelGroup orientation="vertical">
-            {/* Audio Pane (top - primary) */}
-            <Panel defaultSize="65%" minSize="20%">
-              <div
-                onClick={() => setFocusedPane('audio')}
-                style={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderBottom: `2px solid ${
-                    focusedPaneId === 'audio' ? '#3B82F6' : 'transparent'
-                  }`,
-                  transition: 'border-color 0.2s',
-                }}
-              >
-                {/* Pane header */}
-                <div
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color:
-                      focusedPaneId === 'audio' ? '#93c5fd' : '#606070',
-                    backgroundColor: '#0f0f1a',
-                    borderBottom: '1px solid #1a1a2e',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <span style={{ fontSize: '14px' }}>🎧</span>
-                  Audio
-                </div>
-                <AudioPane />
-              </div>
-            </Panel>
-
-            <PanelResizeHandle
-              style={{
-                height: '4px',
-                backgroundColor: '#1a1a2e',
-                cursor: 'row-resize',
-                transition: 'background-color 0.15s',
-              }}
-            />
-
-            {/* Text Pane (bottom) */}
-            <Panel defaultSize="35%" minSize="10%">
-              <PlaceholderPane
-                id="text"
-                title="Text Pane"
-                description="Linked transcript with bidirectional Audio ↔ Text sync"
-                icon="📝"
-              />
-            </Panel>
-          </PanelGroup>
-        </Panel>
-
-        <PanelResizeHandle
-          style={{
-            width: '4px',
-            backgroundColor: '#1a1a2e',
-            cursor: 'col-resize',
-            transition: 'background-color 0.15s',
-          }}
-        />
-
-        {/* Right panel group - Annotations & File */}
-        <Panel defaultSize="24%" minSize="120px" maxSize="40%">
-          <PanelGroup orientation="vertical">
-            <Panel defaultSize="50%" minSize="15%">
-              <PlaceholderPane
-                id="annotations"
-                title="Annotations"
-                description="Free-form notes linked to audio chunks"
-                icon="💬"
-              />
-            </Panel>
-            <PanelResizeHandle
-              style={{
-                height: '4px',
-                backgroundColor: '#1a1a2e',
-                cursor: 'row-resize',
-              }}
-            />
-            <Panel defaultSize="50%" minSize="15%">
-              <PlaceholderPane
-                id="file"
-                title="File Pane"
-                description="PDF & Markdown viewer with cross-pane linking"
-                icon="📄"
-              />
-            </Panel>
-          </PanelGroup>
+        {/* Main content area - managed by dockview */}
+        <Panel defaultSize="86%" minSize="50%">
+          <DockviewLayout />
         </Panel>
       </PanelGroup>
 
