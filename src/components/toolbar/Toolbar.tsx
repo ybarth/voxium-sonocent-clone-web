@@ -3,6 +3,7 @@ import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
   ZoomIn, ZoomOut, ChevronDown, Settings, MessageSquare, MessageSquareOff,
+  Undo2, Redo2,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
@@ -22,6 +23,10 @@ export function Toolbar() {
   const deleteChunks = useProjectStore((s) => s.deleteChunks);
   const splitChunkAtCursor = useProjectStore((s) => s.splitChunkAtCursor);
   const mergeChunks = useProjectStore((s) => s.mergeChunks);
+  const undo = useProjectStore((s) => s.undo);
+  const redo = useProjectStore((s) => s.redo);
+  const undoStack = useProjectStore((s) => s.project.undoStack);
+  const redoStack = useProjectStore((s) => s.project.redoStack);
 
   const showTooltips = useKeybindingStore((s) => s.showTooltips);
   const setShowTooltips = useKeybindingStore((s) => s.setShowTooltips);
@@ -266,6 +271,24 @@ export function Toolbar() {
         onClick={() => deleteChunks(selectedIds)}
         disabled={selectedIds.length === 0}
         commandId="edit.delete"
+      />
+
+      <Divider />
+
+      {/* Undo/Redo */}
+      <ToolbarButton
+        icon={<Undo2 size={16} />}
+        label="Undo"
+        onClick={undo}
+        disabled={undoStack.length === 0}
+        commandId="history.undo"
+      />
+      <ToolbarButton
+        icon={<Redo2 size={16} />}
+        label="Redo"
+        onClick={redo}
+        disabled={redoStack.length === 0}
+        commandId="history.redo"
       />
 
       <Divider />
