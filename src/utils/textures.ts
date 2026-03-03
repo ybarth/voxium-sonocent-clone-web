@@ -184,7 +184,7 @@ export function getTextureCss(
       opacity: textureRef.opacity,
     };
   }
-  if ((textureRef.type === 'custom' || textureRef.type === 'ai') && textureRef.imageUrl) {
+  if ((textureRef.type === 'custom' || textureRef.type === 'ai' || textureRef.type === 'library') && textureRef.imageUrl) {
     return {
       backgroundImage: `url(${textureRef.imageUrl})`,
       backgroundSize: `${64 * textureRef.scale}px`,
@@ -229,6 +229,7 @@ export function getCompositeCssBackground(style: ChunkStyle): React.CSSPropertie
       );
       layers.push(backgroundImage);
     } else if (style.texture.imageUrl) {
+      // Handles custom, ai, and library textures (all carry imageUrl)
       layers.push(`url(${style.texture.imageUrl})`);
     }
   }

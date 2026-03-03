@@ -6,6 +6,7 @@ import { SoundPicker } from './SoundPicker';
 import { VoicePicker } from './VoicePicker';
 import { BUILTIN_TEXTURES } from '../../utils/textures';
 import { generateFormAttributesFromText, hasApiKey } from '../../utils/aiGeneration';
+import { useAssetLibraryStore } from '../../stores/assetLibraryStore';
 
 interface FormEditorProps {
   form: Form;
@@ -26,7 +27,11 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
   const [shapeId, setShapeId] = useState<BuiltinShapeId>(form.shape?.builtinId ?? 'default');
   const [sound, setSound] = useState<SoundAttribute | undefined>(form.sound);
   const [voice, setVoice] = useState<VoiceAttribute | undefined>(form.voice);
+  const [libraryTextureId, setLibraryTextureId] = useState<string | null>(
+    form.texture?.textureRef.type === 'library' ? (form.texture?.textureRef.libraryAssetId ?? null) : null
+  );
   const overlayRef = useRef<HTMLDivElement>(null);
+  const { textures: libraryTextures } = useAssetLibraryStore();
 
   // AI Suggest state
   const [aiExpanded, setAiExpanded] = useState(false);
@@ -76,9 +81,18 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
 
   const handleSave = () => {
     const color: ColorAttribute = { hex: colorHex, alpha: colorAlpha, gradient: form.color?.gradient };
-    const texture: TextureAttribute | undefined = textureEnabled
-      ? { textureRef: { type: 'builtin', builtinId: textureId as any, opacity: textureOpacity, scale: 1 } }
-      : undefined;
+    let texture: TextureAttribute | undefined;
+    if (textureEnabled) {
+      if (libraryTextureId) {
+        const libAsset = libraryTextures.find((t) => t.id === libraryTextureId);
+        if (libAsset) {
+          texture = { textureRef: { type: 'library', libraryAssetId: libraryTextureId, imageUrl: libAsset.dataUrl, opacity: textureOpacity, scale: 1 } };
+        }
+      }
+      if (!texture) {
+        texture = { textureRef: { type: 'builtin', builtinId: textureId as any, opacity: textureOpacity, scale: 1 } };
+      }
+    }
     const shape: ShapeAttribute | undefined = shapeId !== 'default'
       ? { builtinId: shapeId }
       : undefined;
@@ -303,16 +317,17 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
               </div>
               {textureEnabled && (
                 <>
+                  <div style={{ fontSize: '10px', color: '#606070', fontWeight: 600, marginBottom: '2px' }}>Built-in</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
                     {BUILTIN_TEXTURES.map((tex) => (
                       <button
                         key={tex.id}
-                        onClick={() => setTextureId(tex.id)}
+                        onClick={() => { setTextureId(tex.id); setLibraryTextureId(null); }}
                         style={{
                           padding: '4px', fontSize: '9px',
-                          backgroundColor: textureId === tex.id ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.02)',
-                          border: textureId === tex.id ? '1px solid rgba(59,130,246,0.4)' : '1px solid #1a1a2e',
-                          borderRadius: '4px', color: textureId === tex.id ? '#93c5fd' : '#606070',
+                          backgroundColor: textureId === tex.id && !libraryTextureId ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.02)',
+                          border: textureId === tex.id && !libraryTextureId ? '1px solid rgba(59,130,246,0.4)' : '1px solid #1a1a2e',
+                          borderRadius: '4px', color: textureId === tex.id && !libraryTextureId ? '#93c5fd' : '#606070',
                           cursor: 'pointer',
                         }}
                       >
@@ -320,6 +335,36 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
                       </button>
                     ))}
                   </div>
+                  {libraryTextures.length > 0 && (
+                    <>
+                      <div style={{ fontSize: '10px', color: '#606070', fontWeight: 600, marginTop: '8px', marginBottom: '2px' }}>Library</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+                        {libraryTextures.map((asset) => {
+                          const isActive = libraryTextureId === asset.id;
+                          return (
+                            <button
+                              key={asset.id}
+                              onClick={() => { setLibraryTextureId(asset.id); }}
+                              title={asset.name}
+                              style={{
+                                width: '100%', aspectRatio: '1', borderRadius: '4px',
+                                border: isActive ? '2px solid #3B82F6' : '1px solid #1a1a2e',
+                                backgroundColor: colorHex, cursor: 'pointer',
+                                position: 'relative', overflow: 'hidden', padding: 0,
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute', inset: 0,
+                                backgroundImage: `url(${asset.dataUrl})`,
+                                backgroundSize: '32px', backgroundRepeat: 'repeat',
+                                opacity: textureOpacity,
+                              }} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '10px', color: '#606070' }}>Opacity</span>
                     <input

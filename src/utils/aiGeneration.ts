@@ -290,3 +290,81 @@ export async function generateTextureFromText(
 
   return `data:image/png;base64,${b64}`;
 }
+
+// ─── Texture generation from reference image ─────────────────────────────────
+
+export async function generateTextureFromReference(
+  prompt: string,
+  referenceImageDataUrl: string,
+  apiKey?: string
+): Promise<string> {
+  const key = apiKey ?? getApiKey();
+  if (!key) throw new Error('OpenAI API key not configured. Set it in Settings > AI Configuration.');
+  if (!checkRateLimit()) throw new Error('Please wait a moment before generating again.');
+
+  // Step 1: Analyze reference image with GPT-4o-mini vision
+  const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a visual texture analyst. Describe the visual properties of this texture image in detail: colors, patterns, spacing, contrast, material appearance. Be concise (2-3 sentences). Focus on properties that would help recreate or iterate on this texture.',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Analyze this texture image:' },
+            { type: 'image_url', image_url: { url: referenceImageDataUrl, detail: 'low' } },
+          ],
+        },
+      ],
+      max_tokens: 200,
+    }),
+  });
+
+  if (!analysisResponse.ok) {
+    const err = await analysisResponse.text();
+    throw new Error(`Vision API error: ${analysisResponse.status} — ${err}`);
+  }
+
+  const analysisData = await analysisResponse.json();
+  const description = analysisData.choices?.[0]?.message?.content?.trim() ?? '';
+
+  // Step 2: Generate new texture incorporating the reference analysis
+  const enrichedPrompt = `Create a seamless tileable texture pattern. User request: ${prompt}. Reference texture style: ${description}. The pattern should be subtle, low-contrast, and tile perfectly in all directions. PNG format, 256x256 pixels.`;
+
+  // Reset rate limit since we just made a request
+  lastRequestTime = 0;
+
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt: enrichedPrompt,
+      n: 1,
+      size: '1024x1024',
+      response_format: 'b64_json',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`DALL-E API error: ${response.status} — ${err}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data?.[0]?.b64_json;
+  if (!b64) throw new Error('No image data in DALL-E response');
+
+  return `data:image/png;base64,${b64}`;
+}

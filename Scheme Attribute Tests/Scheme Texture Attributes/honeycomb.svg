@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="48" viewBox="0 0 56 48">
+  <rect width="56" height="48" fill="#1c1c1c"/>
+  <!-- Row 1 -->
+  <polygon points="14,2 24,8 24,20 14,26 4,20 4,8" fill="none" stroke="#EAB308" stroke-width="1" opacity="0.4"/>
+  <polygon points="34,2 44,8 44,20 34,26 24,20 24,8" fill="none" stroke="#EAB308" stroke-width="1" opacity="0.4"/>
+  <!-- Row 2 (offset) -->
+  <polygon points="4,22 14,28 14,40 4,46 -6,40 -6,28" fill="none" stroke="#EAB308" stroke-width="1" opacity="0.4"/>
+  <polygon points="24,22 34,28 34,40 24,46 14,40 14,28" fill="none" stroke="#EAB308" stroke-width="1" opacity="0.4"/>
+  <polygon points="44,22 54,28 54,40 44,46 34,40 34,28" fill="none" stroke="#EAB308" stroke-width="1" opacity="0.4"/>
+</svg>

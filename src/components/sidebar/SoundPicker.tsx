@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { SoundAttribute, SoundTrigger } from '../../types/scheme';
 import { BUILTIN_SFX_LIST } from '../../constants/builtinSfx';
 import { getSfxEngine } from '../../hooks/usePlayback';
+import { useAssetLibraryStore } from '../../stores/assetLibraryStore';
 
 interface SoundPickerProps {
   value?: SoundAttribute;
@@ -10,6 +11,7 @@ interface SoundPickerProps {
 
 export function SoundPicker({ value, onChange }: SoundPickerProps) {
   const [enabled, setEnabled] = useState(!!value);
+  const { sounds } = useAssetLibraryStore();
 
   const handleToggle = () => {
     if (enabled) {
@@ -24,12 +26,27 @@ export function SoundPicker({ value, onChange }: SoundPickerProps) {
     }
   };
 
-  const handleSfxChange = (builtinId: string) => {
-    onChange({
-      sfxRef: { type: 'builtin', builtinId, volume: value?.volume ?? 0.5 },
-      trigger: value?.trigger ?? 'start',
-      volume: value?.volume,
-    });
+  const handleSfxChange = (selectValue: string) => {
+    if (selectValue.startsWith('library:')) {
+      const assetId = selectValue.slice(8);
+      const asset = sounds.find((s) => s.id === assetId);
+      if (asset) {
+        onChange({
+          sfxRef: { type: 'library', libraryAssetId: assetId, audioUrl: asset.dataUrl, volume: value?.volume ?? 0.5 },
+          trigger: value?.trigger ?? 'start',
+          volume: value?.volume,
+        });
+        // Preload into SFX engine
+        const engine = getSfxEngine();
+        engine?.loadCustomSfx(asset.dataUrl);
+      }
+    } else {
+      onChange({
+        sfxRef: { type: 'builtin', builtinId: selectValue, volume: value?.volume ?? 0.5 },
+        trigger: value?.trigger ?? 'start',
+        volume: value?.volume,
+      });
+    }
   };
 
   const handleTriggerChange = (trigger: SoundTrigger) => {
@@ -44,12 +61,23 @@ export function SoundPicker({ value, onChange }: SoundPickerProps) {
 
   const handlePreview = () => {
     if (!value) return;
-    const engine = getSfxEngine();
-    engine?.previewSfx(value.sfxRef);
+    if (value.sfxRef.type === 'library' && value.sfxRef.audioUrl) {
+      const audio = new Audio(value.sfxRef.audioUrl);
+      audio.volume = value.sfxRef.volume;
+      audio.play();
+    } else {
+      const engine = getSfxEngine();
+      engine?.previewSfx(value.sfxRef);
+    }
   };
 
   // Group SFX by category
   const categories = [...new Set(BUILTIN_SFX_LIST.map((s) => s.category))];
+
+  // Determine current select value
+  const currentSelectValue = value?.sfxRef.type === 'library' && value.sfxRef.libraryAssetId
+    ? `library:${value.sfxRef.libraryAssetId}`
+    : value?.sfxRef.builtinId ?? '';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -76,7 +104,7 @@ export function SoundPicker({ value, onChange }: SoundPickerProps) {
         <>
           {/* SFX selector */}
           <select
-            value={value.sfxRef.builtinId ?? ''}
+            value={currentSelectValue}
             onChange={(e) => handleSfxChange(e.target.value)}
             style={{
               background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: '6px',
@@ -90,6 +118,16 @@ export function SoundPicker({ value, onChange }: SoundPickerProps) {
                 ))}
               </optgroup>
             ))}
+            {sounds.length > 0 && (
+              <optgroup label="Library">
+                {sounds.map((asset) => (
+                  <option key={asset.id} value={`library:${asset.id}`}>
+                    {asset.name}
+                    {asset.durationSeconds ? ` (${asset.durationSeconds.toFixed(1)}s)` : ''}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
 
           {/* Trigger selector */}

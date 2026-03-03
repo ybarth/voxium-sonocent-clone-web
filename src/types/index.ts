@@ -14,9 +14,10 @@ export type BuiltinTextureId =
   | 'checkerboard' | 'diamond' | 'noise-fine' | 'noise-coarse';
 
 export interface TextureRef {
-  type: 'builtin' | 'custom' | 'ai';
+  type: 'builtin' | 'custom' | 'ai' | 'library';
   builtinId?: BuiltinTextureId;
-  imageUrl?: string; // data URL for custom/ai textures
+  imageUrl?: string; // data URL for custom/ai/library textures
+  libraryAssetId?: string; // references asset in AssetLibrary
   opacity: number;   // 0-1
   scale: number;     // 0.5-3
 }
@@ -49,9 +50,10 @@ export interface ChunkStyle {
 // ─── SFX types ───────────────────────────────────────────────────────────────
 
 export interface SfxRef {
-  type: 'builtin' | 'custom';
+  type: 'builtin' | 'custom' | 'library';
   builtinId?: string;
-  audioUrl?: string;  // data URL for custom SFX
+  audioUrl?: string;  // data URL for custom/library SFX
+  libraryAssetId?: string; // references asset in AssetLibrary
   volume: number;     // 0-1
 }
 

@@ -3,6 +3,8 @@ import { Upload, Sparkles } from 'lucide-react';
 import type { TextureRef, BuiltinTextureId } from '../../types';
 import { BUILTIN_TEXTURES, getTextureCss } from '../../utils/textures';
 import { generateTextureFromText, hasApiKey } from '../../utils/aiGeneration';
+import { useAssetLibraryStore } from '../../stores/assetLibraryStore';
+import { IMAGE_ACCEPT } from '../../utils/assetValidation';
 
 interface TexturePickerProps {
   value: TextureRef | null;
@@ -16,6 +18,8 @@ export function TexturePicker({ value, baseColor, onChange }: TexturePickerProps
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiPreview, setAiPreview] = useState<string | null>(null);
+
+  const { textures } = useAssetLibraryStore();
 
   const opacity = value?.opacity ?? 1;
   const scale = value?.scale ?? 1;
@@ -36,6 +40,10 @@ export function TexturePicker({ value, baseColor, onChange }: TexturePickerProps
     };
     reader.readAsDataURL(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleLibrarySelect = (assetId: string, dataUrl: string) => {
+    onChange({ type: 'library', libraryAssetId: assetId, imageUrl: dataUrl, opacity, scale });
   };
 
   const handleAiGenerate = async () => {
@@ -82,7 +90,7 @@ export function TexturePicker({ value, baseColor, onChange }: TexturePickerProps
         <div style={sectionLabel}>Built-in Textures</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
           {BUILTIN_TEXTURES.map((tex) => {
-            const isActive = value?.builtinId === tex.id;
+            const isActive = value?.type === 'builtin' && value?.builtinId === tex.id;
             const previewRef: TextureRef = { type: 'builtin', builtinId: tex.id, opacity: 1, scale: 1 };
             const cssProps = getTextureCss(previewRef, baseColor);
             return (
@@ -115,18 +123,59 @@ export function TexturePicker({ value, baseColor, onChange }: TexturePickerProps
         </div>
       </div>
 
+      {/* Library textures */}
+      {textures.length > 0 && (
+        <div>
+          <div style={sectionLabel}>Library Textures</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+            {textures.map((asset) => {
+              const isActive = value?.type === 'library' && value?.libraryAssetId === asset.id;
+              return (
+                <button
+                  key={asset.id}
+                  onClick={() => handleLibrarySelect(asset.id, asset.dataUrl)}
+                  title={asset.name}
+                  style={{
+                    width: '100%',
+                    aspectRatio: '1',
+                    borderRadius: '4px',
+                    border: isActive ? '2px solid #3B82F6' : '1px solid #2a2a3e',
+                    backgroundColor: baseColor,
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    padding: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundImage: `url(${asset.dataUrl})`,
+                      backgroundSize: `${64 * (value?.scale ?? 1)}px`,
+                      backgroundRepeat: 'repeat',
+                      opacity: value?.opacity ?? 1,
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Custom upload */}
       <div>
         <button
           onClick={() => fileInputRef.current?.click()}
           style={actionBtnStyle}
         >
-          <Upload size={12} /> Upload Custom Texture (PNG)
+          <Upload size={12} /> Upload Custom Texture
         </button>
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/png"
+          accept={IMAGE_ACCEPT}
           onChange={handleCustomUpload}
           style={{ display: 'none' }}
         />

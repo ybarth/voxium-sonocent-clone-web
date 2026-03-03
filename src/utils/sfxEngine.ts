@@ -171,7 +171,7 @@ export class SfxEngine {
 
     if (sfxRef.type === 'builtin' && sfxRef.builtinId) {
       buffer = this.bufferCache.get(sfxRef.builtinId);
-    } else if (sfxRef.type === 'custom' && sfxRef.audioUrl) {
+    } else if ((sfxRef.type === 'custom' || sfxRef.type === 'library') && sfxRef.audioUrl) {
       buffer = this.customCache.get(sfxRef.audioUrl);
     }
 
@@ -212,7 +212,7 @@ export class SfxEngine {
   /** Bulk-preload all custom audio URLs from a set of SFX mappings */
   async preloadMappings(mappings: SfxMapping[]): Promise<void> {
     const urls = mappings
-      .filter((m) => m.sfxRef.type === 'custom' && m.sfxRef.audioUrl)
+      .filter((m) => (m.sfxRef.type === 'custom' || m.sfxRef.type === 'library') && m.sfxRef.audioUrl)
       .map((m) => m.sfxRef.audioUrl!);
 
     await Promise.all(urls.map((url) => this.loadCustomSfx(url)));
