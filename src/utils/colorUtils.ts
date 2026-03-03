@@ -100,13 +100,106 @@ export function hsvToHex(h: number, s: number, v: number): string {
 
 // ─── Luminance & contrast ────────────────────────────────────────────────────
 
+/** Simplified luminance (legacy — used by existing callers) */
 export function getLuminance(hex: string): number {
   const { r, g, b } = hexToRgb(hex);
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
+/** Simple black/white pick (legacy — used by cursor, duration label) */
 export function getContrastColor(hex: string): '#000000' | '#FFFFFF' {
   return getLuminance(hex) > 0.5 ? '#000000' : '#FFFFFF';
+}
+
+// ─── WCAG 2.1 contrast utilities ────────────────────────────────────────────
+
+/** Linearize a single sRGB channel (0-255) per IEC 61966-2-1 */
+function srgbChannelToLinear(c8: number): number {
+  const c = c8 / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/** WCAG 2.1 relative luminance (properly gamma-linearized) */
+export function getRelativeLuminance(hex: string): number {
+  const { r, g, b } = hexToRgb(hex);
+  return 0.2126 * srgbChannelToLinear(r)
+       + 0.7152 * srgbChannelToLinear(g)
+       + 0.0722 * srgbChannelToLinear(b);
+}
+
+/** WCAG 2.1 contrast ratio between two colors (1:1 to 21:1) */
+export function getWcagContrastRatio(hex1: string, hex2: string): number {
+  const l1 = getRelativeLuminance(hex1);
+  const l2 = getRelativeLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** Alpha-composite a foreground color over a background color */
+function alphaComposite(fgHex: string, alpha: number, bgHex: string): string {
+  const fg = hexToRgb(fgHex);
+  const bg = hexToRgb(bgHex);
+  const a = Math.max(0, Math.min(1, alpha));
+  return rgbToHex(
+    fg.r * a + bg.r * (1 - a),
+    fg.g * a + bg.g * (1 - a),
+    fg.b * a + bg.b * (1 - a),
+  );
+}
+
+/** App dark background color used for alpha compositing */
+const APP_BG = '#1a1a2e';
+
+/**
+ * Compute the optimal high-contrast text color for a chunk number badge.
+ *
+ * Accounts for:
+ * - WCAG 2.1 relative luminance with proper sRGB linearization
+ * - Gradient sampling at the badge position (top-left corner)
+ * - Alpha compositing against the dark app background
+ * - Waveform mode's reduced-alpha chunk overlay
+ *
+ * Returns '#000000' or '#FFFFFF' — whichever yields the higher WCAG contrast ratio.
+ */
+export function getChunkNumberColor(
+  style: ChunkStyle | null,
+  baseColor: string,
+  visualMode: 'waveform' | 'flat',
+): string {
+  let effectiveBg: string;
+
+  if (style?.gradient && style.gradient.stops.length >= 2) {
+    // Sample the gradient at the number badge position.
+    // Badge is at top-left: for horizontal gradients use x≈0.05,
+    // for vertical gradients use y≈0.05.
+    const dir = style.gradient.direction;
+    let frac: number;
+    if (dir === 'to-right') frac = 0.05;
+    else if (dir === 'to-left') frac = 0.95;
+    else if (dir === 'to-bottom') frac = 0.05;
+    else /* to-top */ frac = 0.95;
+    effectiveBg = sampleGradientColorAt(style.gradient, frac);
+    // Apply style alpha
+    if (style.alpha < 1) {
+      effectiveBg = alphaComposite(effectiveBg, style.alpha, APP_BG);
+    }
+  } else if (style) {
+    effectiveBg = style.color;
+    if (style.alpha < 1) {
+      effectiveBg = alphaComposite(effectiveBg, style.alpha, APP_BG);
+    }
+  } else if (visualMode === 'waveform') {
+    // Waveform mode: chunk bg is baseColor at ~25% alpha over dark background
+    effectiveBg = alphaComposite(baseColor, 0.25, APP_BG);
+  } else {
+    effectiveBg = baseColor;
+  }
+
+  // Pick black or white based on highest WCAG contrast ratio
+  const ratioBlack = getWcagContrastRatio(effectiveBg, '#000000');
+  const ratioWhite = getWcagContrastRatio(effectiveBg, '#FFFFFF');
+  return ratioWhite >= ratioBlack ? '#FFFFFF' : '#000000';
 }
 
 // ─── Gradient sampling ───────────────────────────────────────────────────────

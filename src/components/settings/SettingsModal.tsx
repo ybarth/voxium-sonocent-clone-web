@@ -6,7 +6,8 @@ import { COMMAND_REGISTRY, COMMAND_CATEGORIES, type CommandCategory } from '../.
 import { PRESET_LABELS, type PresetId, normalizeDescriptor } from '../../commands/keybindingPresets';
 import { KeybindingRow } from './KeybindingRow';
 import { TtsEngine } from '../../utils/ttsEngine';
-import type { TtsAnnounceAt, TtsContentMode, TtsChunkCountingMode } from '../../types';
+import type { TtsAnnounceAt, TtsContentMode, TtsChunkCountingMode, ChunkNumberPresetId } from '../../types';
+import { CHUNK_NUMBER_PRESETS } from '../../constants/chunkNumberPresets';
 import { getApiKey, setApiKey, clearApiKey, hasApiKey } from '../../utils/aiGeneration';
 import {
   getElevenLabsApiKey, setElevenLabsApiKey, clearElevenLabsApiKey, hasElevenLabsApiKey,
@@ -269,6 +270,9 @@ function GeneralSettings() {
   const setShowTooltips = useKeybindingStore(s => s.setShowTooltips);
   const ttsConfig = useProjectStore(s => s.project.settings.ttsConfig);
   const setTtsConfig = useProjectStore(s => s.setTtsConfig);
+  const updateSettings = useProjectStore(s => s.updateSettings);
+  const chunkNumberDisplay = useProjectStore(s => s.project.settings.chunkNumberDisplay);
+  const chunkNumberStyle = useProjectStore(s => s.project.settings.chunkNumberStyle ?? 'default');
   const defaultAttributes = useProjectStore(s => s.project.settings.defaultAttributes);
   const setDefaultAttributes = useProjectStore(s => s.setDefaultAttributes);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -299,6 +303,28 @@ function GeneralSettings() {
         description="Display tooltips with keyboard shortcuts when hovering over toolbar buttons"
         value={showTooltips}
         onChange={() => setShowTooltips(!showTooltips)}
+      />
+
+      {/* ── Chunk Numbering ── */}
+      <SectionHeader>Chunk Numbering</SectionHeader>
+
+      <SettingSelectRow
+        title="Display Mode"
+        value={chunkNumberDisplay}
+        options={[
+          { value: 'document-relative', label: 'Project-wide (1, 2, 3...)' },
+          { value: 'section-relative', label: 'Per Section (1, 2, 3...)' },
+          { value: 'both', label: 'Both (Section # (Project #))' },
+          { value: 'hidden', label: 'Hidden' },
+        ]}
+        onChange={(v) => updateSettings({ chunkNumberDisplay: v as any })}
+      />
+
+      <SettingSelectRow
+        title="Number Style"
+        value={chunkNumberStyle}
+        options={CHUNK_NUMBER_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
+        onChange={(v) => updateSettings({ chunkNumberStyle: v as ChunkNumberPresetId })}
       />
 
       {/* ── TTS Announcements ── */}

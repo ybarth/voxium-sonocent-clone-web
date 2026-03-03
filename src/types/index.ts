@@ -87,6 +87,10 @@ export interface TtsConfig {
   duckLevel: number; // 0-1, how much to reduce main audio during TTS
 }
 
+// ─── Chunk number style presets ──────────────────────────────────────────────
+
+export type ChunkNumberPresetId = 'default' | 'badge' | 'monospace' | 'minimal' | 'outlined' | 'large';
+
 // ─── Filter types ────────────────────────────────────────────────────────────
 
 export type FilterCriterionType = 'color' | 'texture' | 'combo' | 'form';
@@ -212,6 +216,7 @@ export interface ProjectSettings {
   recentColors: RecentColor[];
   favoriteColors: FavoriteColor[];
   filter: FilterState;
+  chunkNumberStyle: ChunkNumberPresetId;
   // Phase 3: default fallback attributes
   defaultAttributes: DefaultAttributes;
 }
@@ -328,7 +333,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   volume: 1.0,
   zoomLevel: 1.0,
   visualMode: 'waveform',
-  chunkNumberDisplay: 'section-relative',
+  chunkNumberDisplay: 'document-relative',
   silenceThresholdDb: -40,
   minSilenceDurationMs: 300,
   minChunkDurationMs: 500,
@@ -337,5 +342,6 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   recentColors: [],
   favoriteColors: [],
   filter: DEFAULT_FILTER_STATE,
+  chunkNumberStyle: 'default',
   defaultAttributes: DEFAULT_FORM_ATTRIBUTES,
 };

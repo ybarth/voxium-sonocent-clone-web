@@ -3,10 +3,11 @@ import type { Chunk } from '../../types';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
 import { type ModifierMode, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
-import { getContrastColor, getAdaptiveCursorStyle } from '../../utils/colorUtils';
+import { getContrastColor, getAdaptiveCursorStyle, getChunkNumberColor } from '../../utils/colorUtils';
 import { getCompositeCssBackground, renderTextureToCanvas, getGradientCss } from '../../utils/textures';
 import { resolveChunkForm, resolvedFormToChunkStyle, getFormBaseColor } from '../../utils/formResolver';
 import { getShapeClipPath, getShapeBorderRadius } from '../../utils/shapeRenderer';
+import { CHUNK_NUMBER_PRESET_MAP } from '../../constants/chunkNumberPresets';
 
 interface ChunkBarProps {
   chunk: Chunk;
@@ -97,6 +98,13 @@ export const ChunkBar = memo(function ChunkBar({
     return getContrastColor(baseColor);
   }, [baseColor, hasStyle, chunk.style]);
 
+  // WCAG-optimal contrast color for chunk number badge
+  // Uses proper sRGB linearization, gradient sampling at badge position,
+  // and alpha compositing against the dark app background
+  const numberContrastColor = useMemo(() => {
+    return getChunkNumberColor(chunk.style ?? null, baseColor, visualMode);
+  }, [chunk.style, baseColor, visualMode]);
+
   // Adaptive cursor style (updates per frame for gradients)
   const cursorStyle = useMemo(() => {
     if (hasStyle && chunk.style) {
@@ -183,10 +191,19 @@ export const ChunkBar = memo(function ChunkBar({
     switch (numberDisplay) {
       case 'section-relative': return `${sectionChunkNumber}`;
       case 'document-relative': return `${chunkNumber}`;
-      case 'both': return `${sectionChunkNumber} (${chunkNumber})`;
+      case 'both': {
+        // Narrow chunk guard: show only project number when too tight
+        if (width < 35 * zoomLevel) return `${chunkNumber}`;
+        return `${sectionChunkNumber} (${chunkNumber})`;
+      }
       case 'hidden': return null;
     }
-  }, [numberDisplay, chunkNumber, sectionChunkNumber]);
+  }, [numberDisplay, chunkNumber, sectionChunkNumber, width, zoomLevel]);
+
+  const numberPreset = useMemo(() => {
+    const id = settings.chunkNumberStyle ?? 'default';
+    return CHUNK_NUMBER_PRESET_MAP.get(id) ?? CHUNK_NUMBER_PRESET_MAP.get('default')!;
+  }, [settings.chunkNumberStyle]);
 
   // Show cursor line whenever this is the current chunk (playing or not)
   const showCursor = isCurrent;
@@ -300,10 +317,17 @@ export const ChunkBar = memo(function ChunkBar({
             position: 'absolute',
             top: `${1 * zoomLevel}px`,
             left: `${3 * zoomLevel}px`,
-            fontSize: `${Math.max(6, 9 * zoomLevel)}px`,
-            fontWeight: 700,
-            color: contrastColor,
-            opacity: 0.8,
+            fontSize: `${Math.max(numberPreset.fontSizeMin, numberPreset.fontSizeBase * zoomLevel)}px`,
+            fontWeight: numberPreset.fontWeight,
+            fontFamily: numberPreset.fontFamily,
+            color: numberPreset.textColor ?? numberContrastColor,
+            opacity: numberPreset.opacity,
+            background: numberPreset.background,
+            padding: numberPreset.padding,
+            borderRadius: numberPreset.borderRadius,
+            textShadow: numberPreset.textShadow,
+            letterSpacing: numberPreset.letterSpacing,
+            whiteSpace: 'nowrap',
             zIndex: 1,
             lineHeight: 1,
             pointerEvents: 'none',
