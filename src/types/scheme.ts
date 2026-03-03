@@ -150,6 +150,17 @@ export interface SectionScheme {
   forms: SectionForm[];
 }
 
+// ─── Project Scheme ─────────────────────────────────────────────────────────
+// A linked pair of chunk scheme + section scheme covering a full project.
+
+export interface ProjectScheme {
+  id: string;
+  name: string;
+  builtIn: boolean;
+  chunkSchemeId: string;     // references a Scheme
+  sectionSchemeId: string;   // references a SectionScheme
+}
+
 export interface ResolvedSectionForm {
   formId: string | null;
   label: string;

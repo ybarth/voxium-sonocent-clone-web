@@ -3,16 +3,16 @@ import { X } from 'lucide-react';
 import { ForgeColorTab } from './ForgeColorTab';
 import { ForgeTextureTab } from './ForgeTextureTab';
 import { ForgeSoundTab } from './ForgeSoundTab';
-import { ForgeSchemeTab } from './ForgeSchemeTab';
+import { ForgeSchemesTab } from './ForgeSchemesTab';
 
 interface ForgeModalProps {
   onClose: () => void;
 }
 
-type ForgeTab = 'colors' | 'textures' | 'sounds' | 'scheme';
+type ForgeTab = 'schemes' | 'colors' | 'textures' | 'sounds';
 
 export function ForgeModal({ onClose }: ForgeModalProps) {
-  const [activeTab, setActiveTab] = useState<ForgeTab>('scheme');
+  const [activeTab, setActiveTab] = useState<ForgeTab>('schemes');
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export function ForgeModal({ onClose }: ForgeModalProps) {
       }}
     >
       <div style={{
-        width: '540px', maxWidth: '90vw', maxHeight: '85vh',
+        width: '620px', maxWidth: '90vw', maxHeight: '85vh',
         backgroundColor: '#0d0d18', border: '1px solid #1a1a2e',
         borderRadius: '12px', display: 'flex', flexDirection: 'column',
         overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
@@ -63,7 +63,7 @@ export function ForgeModal({ onClose }: ForgeModalProps) {
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #1a1a2e', padding: '0 20px' }}>
           {([
-            { id: 'scheme', label: 'Full Scheme' },
+            { id: 'schemes', label: 'Schemes' },
             { id: 'colors', label: 'Colors' },
             { id: 'textures', label: 'Textures' },
             { id: 'sounds', label: 'Sounds' },
@@ -86,7 +86,7 @@ export function ForgeModal({ onClose }: ForgeModalProps) {
 
         {/* Content */}
         <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
-          {activeTab === 'scheme' && <ForgeSchemeTab onGenerated={onClose} />}
+          {activeTab === 'schemes' && <ForgeSchemesTab onGenerated={onClose} />}
           {activeTab === 'colors' && <ForgeColorTab onGenerated={onClose} />}
           {activeTab === 'textures' && <ForgeTextureTab />}
           {activeTab === 'sounds' && <ForgeSoundTab />}

@@ -142,6 +142,63 @@ No other text. Labels should be concise (1-3 words). Colors should be visually d
   throw new Error('Could not parse scheme response from AI');
 }
 
+// ─── Section scheme generation via GPT ───────────────────────────────────────
+
+export async function generateSectionSchemeFromText(
+  prompt: string,
+  apiKey?: string
+): Promise<{ labels: string[]; colors: string[] }> {
+  const key = apiKey ?? getApiKey();
+  if (!key) throw new Error('OpenAI API key not configured. Set it in Settings > AI Configuration.');
+  if (!checkRateLimit()) throw new Error('Please wait a moment before generating again.');
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a section annotation scheme designer. Given a use case description, generate a section color scheme with 3-6 high-saturation section categories.
+Each section has a label and color (hex). Colors must be high-saturation and visually distinct for use as section background indicators.
+Return ONLY valid JSON in this exact format:
+{"labels":["Label1","Label2"],"colors":["#2563EB","#DC2626"]}
+No other text. Labels should be concise (1-3 words). Colors should have high saturation (S>70%) and work as UI accent colors.`,
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 200,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} — ${err}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content?.trim() ?? '';
+
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.labels && parsed.colors && Array.isArray(parsed.labels)) {
+      return {
+        labels: parsed.labels,
+        colors: parsed.colors,
+      };
+    }
+  } catch {
+    // fallback: ignore
+  }
+
+  throw new Error('Could not parse section scheme response from AI');
+}
+
 // ─── Form attribute suggestion via GPT ───────────────────────────────────────
 
 export async function generateFormAttributesFromText(

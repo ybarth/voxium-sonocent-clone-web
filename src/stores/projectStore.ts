@@ -7,10 +7,11 @@ import type {
   ColorKeyTemplate, ColorKeyEntry,
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS, DEFAULT_TTS_CONFIG } from '../types';
-import type { Scheme, Form, DefaultAttributes, SectionScheme, SectionForm } from '../types/scheme';
+import type { Scheme, Form, DefaultAttributes, SectionScheme, SectionForm, ProjectScheme } from '../types/scheme';
 import { migrateColorKeyToScheme } from '../utils/schemeMigration';
 import { ALL_BUILTIN_SCHEMES } from '../constants/schemes';
 import { VIVID_SECTION_SCHEME, ALL_BUILTIN_SECTION_SCHEMES } from '../constants/sectionSchemes';
+import { ALL_BUILTIN_PROJECT_SCHEMES } from '../constants/projectSchemes';
 import { getFlatSectionOrder } from '../utils/sectionTree';
 import { BUILTIN_TEMPLATES } from '../constants/templates';
 
@@ -200,10 +201,19 @@ interface ProjectStore {
 
   // Scheme templates (localStorage-backed)
   addScheme: (scheme: Scheme) => void;
+  addSectionScheme: (scheme: SectionScheme) => void;
   saveSchemeAsTemplate: (schemeId: string, newName?: string, overwriteTemplateId?: string) => void;
   loadSchemeTemplate: (templateId: string) => void;
   getSavedTemplateNames: () => { id: string; name: string }[];
   deleteSchemeTemplate: (templateId: string) => void;
+
+  // Phase 4: Project Schemes
+  createProjectScheme: (name: string, chunkSchemeId: string, sectionSchemeId: string) => ProjectScheme;
+  addProjectScheme: (scheme: ProjectScheme) => void;
+  setActiveProjectScheme: (id: string | null) => void;
+  updateProjectScheme: (id: string, updates: Partial<ProjectScheme>) => void;
+  deleteProjectScheme: (id: string) => void;
+  duplicateProjectScheme: (id: string) => void;
 
   pushUndo: (type: UndoAction['type']) => void;
   undo: () => void;
@@ -264,6 +274,8 @@ const initialProject: Project = {
   schemes: [initialScheme],
   sectionScheme: VIVID_SECTION_SCHEME,
   sectionSchemes: [VIVID_SECTION_SCHEME],
+  projectScheme: null,
+  projectSchemes: [],
   undoStack: [],
   redoStack: [],
 };
@@ -2551,6 +2563,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }));
   },
 
+  addSectionScheme: (scheme) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionSchemes: [...s.project.sectionSchemes, scheme],
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
   saveSchemeAsTemplate: (schemeId, newName, overwriteTemplateId) => {
     const state = get();
     const scheme =
@@ -2605,6 +2627,118 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   deleteSchemeTemplate: (templateId) => {
     const templates = readSchemeTemplates().filter((t) => t.id !== templateId);
     writeSchemeTemplates(templates);
+  },
+
+  // ─── Project Schemes ────────────────────────────────────────────────────────
+
+  createProjectScheme: (name, chunkSchemeId, sectionSchemeId) => {
+    const newScheme: ProjectScheme = {
+      id: uuid(),
+      name,
+      builtIn: false,
+      chunkSchemeId,
+      sectionSchemeId,
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        projectSchemes: [...s.project.projectSchemes, newScheme],
+      },
+    }));
+    return newScheme;
+  },
+
+  addProjectScheme: (scheme) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        projectSchemes: [...s.project.projectSchemes, scheme],
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  setActiveProjectScheme: (id) => {
+    if (id === null) {
+      // Switch to independent mode
+      set((s) => ({
+        project: {
+          ...s.project,
+          projectScheme: null,
+          updatedAt: new Date(),
+        },
+      }));
+      return;
+    }
+
+    const state = get();
+    const projectScheme =
+      state.project.projectSchemes.find((s) => s.id === id) ??
+      ALL_BUILTIN_PROJECT_SCHEMES.find((s) => s.id === id);
+    if (!projectScheme) return;
+
+    // Activate both the chunk scheme and section scheme
+    get().pushUndo('change-project-scheme');
+    set((s) => ({
+      project: {
+        ...s.project,
+        projectScheme,
+        projectSchemes: s.project.projectSchemes.some((ps) => ps.id === projectScheme.id)
+          ? s.project.projectSchemes
+          : [...s.project.projectSchemes, projectScheme],
+        updatedAt: new Date(),
+      },
+    }));
+    // Switch child schemes
+    get().setActiveScheme(projectScheme.chunkSchemeId);
+    get().setActiveSectionScheme(projectScheme.sectionSchemeId);
+  },
+
+  updateProjectScheme: (id, updates) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        projectSchemes: s.project.projectSchemes.map((ps) =>
+          ps.id === id ? { ...ps, ...updates } : ps
+        ),
+        projectScheme: s.project.projectScheme?.id === id
+          ? { ...s.project.projectScheme, ...updates }
+          : s.project.projectScheme,
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  deleteProjectScheme: (id) => {
+    const state = get();
+    if (state.project.projectScheme?.id === id) return; // Can't delete active
+    set((s) => ({
+      project: {
+        ...s.project,
+        projectSchemes: s.project.projectSchemes.filter((ps) => ps.id !== id),
+      },
+    }));
+  },
+
+  duplicateProjectScheme: (id) => {
+    const state = get();
+    const source =
+      state.project.projectSchemes.find((s) => s.id === id) ??
+      ALL_BUILTIN_PROJECT_SCHEMES.find((s) => s.id === id);
+    if (!source) return;
+
+    const copy: ProjectScheme = {
+      ...source,
+      id: uuid(),
+      name: `${source.name} (Copy)`,
+      builtIn: false,
+    };
+    set((s) => ({
+      project: {
+        ...s.project,
+        projectSchemes: [...s.project.projectSchemes, copy],
+      },
+    }));
   },
 }));
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Link2, Unlink } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
@@ -88,8 +88,37 @@ export function SchemeSidebar() {
     ...ALL_BUILTIN_SCHEMES.filter((b) => !schemes.some((s) => s.id === b.id)),
   ];
 
+  const projectScheme = useProjectStore((s) => s.project.projectScheme);
+  const setActiveProjectScheme = useProjectStore((s) => s.setActiveProjectScheme);
+
   return (
     <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {/* Project scheme indicator */}
+      {projectScheme && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '6px 8px', borderRadius: '6px',
+          backgroundColor: 'rgba(139,92,246,0.1)',
+          border: '1px solid rgba(139,92,246,0.2)',
+        }}>
+          <Link2 size={11} style={{ color: '#8B5CF6', flexShrink: 0 }} />
+          <span style={{ fontSize: '10px', color: '#A78BFA', fontWeight: 600, flex: 1 }}>
+            Project Scheme: {projectScheme.name}
+          </span>
+          <button
+            onClick={() => setActiveProjectScheme(null)}
+            title="Switch to independent mode"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '2px',
+              background: 'none', border: 'none', color: '#606070',
+              cursor: 'pointer', padding: '2px', fontSize: '9px',
+            }}
+          >
+            <Unlink size={9} /> Unlink
+          </button>
+        </div>
+      )}
+
       {/* Scheme selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{
