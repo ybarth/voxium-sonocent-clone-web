@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Upload, Sparkles } from 'lucide-react';
-import type { SectionForm, ColorAttribute, TextureAttribute } from '../../types/scheme';
+import type { SectionForm, ColorAttribute, TextureAttribute, SectionSoundAttribute, VoiceAttribute } from '../../types/scheme';
 import type { TextureRef, BuiltinTextureId } from '../../types';
 import { BUILTIN_TEXTURES, getTextureCss } from '../../utils/textures';
 import { hexToHsl, isHighSaturation, enforceMinSaturation } from '../../utils/colorUtils';
 import { generateTextureFromText, hasApiKey } from '../../utils/aiGeneration';
+import { SectionSoundPicker } from './SectionSoundPicker';
+import { VoicePicker } from './VoicePicker';
 
 interface SectionFormEditorProps {
   form: SectionForm;
@@ -12,7 +14,7 @@ interface SectionFormEditorProps {
   onClose: () => void;
 }
 
-type Tab = 'color' | 'texture';
+type Tab = 'color' | 'texture' | 'sound' | 'voice';
 
 export function SectionFormEditor({ form, onSave, onClose }: SectionFormEditorProps) {
   const [activeTab, setActiveTab] = useState<Tab>('color');
@@ -30,6 +32,8 @@ export function SectionFormEditor({ form, onSave, onClose }: SectionFormEditorPr
   const [textureOpacity, setTextureOpacity] = useState(form.texture?.textureRef.opacity ?? 0.5);
   const [textureScale, setTextureScale] = useState(form.texture?.textureRef.scale ?? 1);
   const [customImageUrl, setCustomImageUrl] = useState(form.texture?.textureRef.imageUrl ?? '');
+  const [sound, setSound] = useState<SectionSoundAttribute | undefined>(form.sound);
+  const [voice, setVoice] = useState<VoiceAttribute | undefined>(form.voice);
   const overlayRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -103,7 +107,7 @@ export function SectionFormEditor({ form, onSave, onClose }: SectionFormEditorPr
     if (textureEnabled && currentTextureRef) {
       texture = { textureRef: currentTextureRef };
     }
-    onSave({ label, color, texture });
+    onSave({ label, color, texture, sound, voice });
     onClose();
   };
 
@@ -153,7 +157,7 @@ export function SectionFormEditor({ form, onSave, onClose }: SectionFormEditorPr
 
         {/* Tabs — Color + Texture only */}
         <div style={{ display: 'flex', borderBottom: '1px solid #1a1a2e', padding: '0 16px' }}>
-          {(['color', 'texture'] as Tab[]).map((tab) => (
+          {(['color', 'texture', 'sound', 'voice'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -423,6 +427,14 @@ export function SectionFormEditor({ form, onSave, onClose }: SectionFormEditorPr
                 </>
               )}
             </div>
+          )}
+
+          {activeTab === 'sound' && (
+            <SectionSoundPicker value={sound} onChange={setSound} />
+          )}
+
+          {activeTab === 'voice' && (
+            <VoicePicker value={voice} onChange={setVoice} />
           )}
         </div>
 

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Sparkles, ChevronDown, ChevronRight } from 'lucide-react';
-import type { Form, ColorAttribute, TextureAttribute, ShapeAttribute, SoundAttribute, BuiltinShapeId } from '../../types/scheme';
+import type { Form, ColorAttribute, TextureAttribute, ShapeAttribute, SoundAttribute, VoiceAttribute, BuiltinShapeId } from '../../types/scheme';
 import { ShapePicker } from './ShapePicker';
 import { SoundPicker } from './SoundPicker';
+import { VoicePicker } from './VoicePicker';
 import { BUILTIN_TEXTURES } from '../../utils/textures';
 import { generateFormAttributesFromText, hasApiKey } from '../../utils/aiGeneration';
 
@@ -12,7 +13,7 @@ interface FormEditorProps {
   onClose: () => void;
 }
 
-type Tab = 'color' | 'texture' | 'shape' | 'sound';
+type Tab = 'color' | 'texture' | 'shape' | 'sound' | 'voice';
 
 export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
   const [activeTab, setActiveTab] = useState<Tab>('color');
@@ -24,6 +25,7 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
   const [textureOpacity, setTextureOpacity] = useState(form.texture?.textureRef.opacity ?? 0.3);
   const [shapeId, setShapeId] = useState<BuiltinShapeId>(form.shape?.builtinId ?? 'default');
   const [sound, setSound] = useState<SoundAttribute | undefined>(form.sound);
+  const [voice, setVoice] = useState<VoiceAttribute | undefined>(form.voice);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // AI Suggest state
@@ -87,6 +89,7 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
       texture,
       shape,
       sound,
+      voice,
     });
     onClose();
   };
@@ -227,7 +230,7 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #1a1a2e', padding: '0 16px' }}>
-          {(['color', 'texture', 'shape', 'sound'] as Tab[]).map((tab) => (
+          {(['color', 'texture', 'shape', 'sound', 'voice'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -341,6 +344,10 @@ export function FormEditor({ form, onSave, onClose }: FormEditorProps) {
 
           {activeTab === 'sound' && (
             <SoundPicker value={sound} onChange={setSound} />
+          )}
+
+          {activeTab === 'voice' && (
+            <VoicePicker value={voice} onChange={setVoice} />
           )}
         </div>
 

@@ -4,7 +4,7 @@
 import type { Chunk, ChunkStyle } from '../types';
 import type {
   Scheme, DefaultAttributes, ResolvedForm, Form,
-  ColorAttribute, ShapeAttribute,
+  SectionScheme, ResolvedSectionForm,
 } from '../types/scheme';
 import { DEFAULT_FORM_ATTRIBUTES } from '../types/scheme';
 
@@ -47,6 +47,7 @@ export function resolveChunkForm(
       texture: chunk.style.texture ? { textureRef: chunk.style.texture } : null,
       shape: defaults.shape,
       sound: defaults.sound ?? null,
+      voice: null,
     };
   }
 
@@ -59,6 +60,7 @@ export function resolveChunkForm(
       texture: null,
       shape: defaults.shape,
       sound: defaults.sound ?? null,
+      voice: null,
     };
   }
 
@@ -70,6 +72,7 @@ export function resolveChunkForm(
     texture: defaults.texture ? defaults.texture : null,
     shape: defaults.shape,
     sound: defaults.sound ?? null,
+    voice: null,
   };
 }
 
@@ -87,6 +90,38 @@ function resolveFormWithDefaults(
     texture: form.texture ?? defaults.texture ?? null,
     shape: form.shape ?? defaults.shape,
     sound: form.sound ?? defaults.sound ?? null,
+    voice: form.voice ?? null,
+  };
+}
+
+/**
+ * Resolve a section's form to a fully-populated ResolvedSectionForm.
+ */
+export function resolveSectionForm(
+  sectionFormId: string | null,
+  sectionScheme: SectionScheme
+): ResolvedSectionForm {
+  if (sectionFormId) {
+    const form = sectionScheme.forms.find((f) => f.id === sectionFormId);
+    if (form) {
+      return {
+        formId: form.id,
+        label: form.label,
+        color: form.color ?? { hex: '#1a1a2e', alpha: 0.3 },
+        texture: form.texture ?? null,
+        sound: form.sound ?? null,
+        voice: form.voice ?? null,
+      };
+    }
+  }
+
+  return {
+    formId: null,
+    label: '',
+    color: { hex: '#1a1a2e', alpha: 0.3 },
+    texture: null,
+    sound: null,
+    voice: null,
   };
 }
 

@@ -1,7 +1,8 @@
 import { useEffect, useCallback } from 'react';
 import { PlaybackEngine } from '../utils/playbackEngine';
 import { SfxEngine, resolveSfxForChunkForm } from '../utils/sfxEngine';
-import { TtsEngine, getTtsText } from '../utils/ttsEngine';
+import { TtsEngine, getTtsText, getSectionTtsText } from '../utils/ttsEngine';
+import { resolveChunkForm, resolveSectionForm } from '../utils/formResolver';
 import { useProjectStore } from '../stores/projectStore';
 
 // Module-level singleton engines — shared across all components
@@ -9,6 +10,9 @@ let engineInstance: PlaybackEngine | null = null;
 let sfxEngineInstance: SfxEngine | null = null;
 let ttsEngineInstance: TtsEngine | null = null;
 let engineCallbacksBound = false;
+
+// Track section transitions for TTS announcements
+let lastPlayedSectionId: string | null = null;
 
 function getOrCreateEngine(): PlaybackEngine {
   if (!engineInstance) {
@@ -53,15 +57,59 @@ function getOrCreateEngine(): PlaybackEngine {
         if (sfxRef) sfxEngineInstance.playSfx(sfxRef);
       }
 
-      // TTS announcement at chunk start
       const ttsConfig = state.project.settings.ttsConfig;
-      if (ttsEngineInstance && ttsConfig.enabled && (ttsConfig.announceAt === 'start' || ttsConfig.announceAt === 'both')) {
+      if (ttsEngineInstance && ttsConfig.enabled) {
         const activeChunks = state.project.chunks.filter((c) => !c.isDeleted);
-        const chunkNumber = activeChunks.findIndex((c) => c.id === chunkId) + 1;
+        const activeSections = state.project.sections.filter((s) => s.status === 'active');
+        const projectChunkNumber = activeChunks.findIndex((c) => c.id === chunkId) + 1;
+
+        // Section-relative chunk number
+        const sectionChunks = activeChunks.filter((c) => c.sectionId === chunk.sectionId);
+        const sectionChunkNumber = sectionChunks.findIndex((c) => c.id === chunkId) + 1;
+
+        const sectionIndex = activeSections.findIndex((s) => s.id === chunk.sectionId);
+        const sectionNumber = sectionIndex + 1;
         const section = state.project.sections.find((s) => s.id === chunk.sectionId);
-        const colorEntry = state.project.colorKey.colors.find((c) => c.hex === (chunk.style?.color ?? chunk.color));
-        const text = getTtsText(ttsConfig.contentMode, chunkNumber, section?.name, colorEntry?.label);
-        ttsEngineInstance.speak(text, ttsConfig);
+
+        // Detect section transition
+        const sectionChanged = lastPlayedSectionId !== chunk.sectionId;
+
+        if (sectionChanged && ttsConfig.announceSections &&
+            (ttsConfig.sectionAnnounceAt === 'begin' || ttsConfig.sectionAnnounceAt === 'both')) {
+          // Play section SFX if configured
+          if (sfxEngineInstance && section?.sectionFormId) {
+            const resolvedSectionForm = resolveSectionForm(
+              section.sectionFormId, state.project.sectionScheme
+            );
+            if (resolvedSectionForm.sound &&
+                (resolvedSectionForm.sound.trigger === 'section-begin' || resolvedSectionForm.sound.trigger === 'both')) {
+              const vol = resolvedSectionForm.sound.volume ?? resolvedSectionForm.sound.sfxRef.volume;
+              sfxEngineInstance.playSfx({ ...resolvedSectionForm.sound.sfxRef, volume: vol });
+            }
+          }
+
+          // Speak section name
+          const sectionText = getSectionTtsText(section?.name, sectionNumber);
+          const sectionVoice = section?.sectionFormId
+            ? resolveSectionForm(section.sectionFormId, state.project.sectionScheme).voice ?? undefined
+            : undefined;
+          ttsEngineInstance.speak(sectionText, ttsConfig, sectionVoice);
+        }
+
+        lastPlayedSectionId = chunk.sectionId;
+
+        // TTS announcement at chunk start
+        if (ttsConfig.announceAt === 'start' || ttsConfig.announceAt === 'both') {
+          const colorEntry = state.project.colorKey.colors.find((c) => c.hex === (chunk.style?.color ?? chunk.color));
+          const resolvedForm = resolveChunkForm(chunk, state.project.scheme, state.project.settings.defaultAttributes);
+          const formLabel = resolvedForm.label || colorEntry?.label;
+          const text = getTtsText(
+            ttsConfig.contentMode, ttsConfig.chunkCountingMode,
+            projectChunkNumber, sectionChunkNumber, sectionNumber,
+            section?.name, formLabel
+          );
+          ttsEngineInstance.speak(text, ttsConfig, resolvedForm.voice ?? undefined);
+        }
       }
     });
 
@@ -79,15 +127,58 @@ function getOrCreateEngine(): PlaybackEngine {
         if (sfxRef) sfxEngineInstance.playSfx(sfxRef);
       }
 
-      // TTS announcement at chunk end
       const ttsConfig = state.project.settings.ttsConfig;
-      if (ttsEngineInstance && ttsConfig.enabled && (ttsConfig.announceAt === 'end' || ttsConfig.announceAt === 'both')) {
+      if (ttsEngineInstance && ttsConfig.enabled) {
         const activeChunks = state.project.chunks.filter((c) => !c.isDeleted);
-        const chunkNumber = activeChunks.findIndex((c) => c.id === chunkId) + 1;
+        const activeSections = state.project.sections.filter((s) => s.status === 'active');
+        const projectChunkNumber = activeChunks.findIndex((c) => c.id === chunkId) + 1;
+
+        const sectionChunks = activeChunks.filter((c) => c.sectionId === chunk.sectionId);
+        const sectionChunkNumber = sectionChunks.findIndex((c) => c.id === chunkId) + 1;
+
+        const sectionIndex = activeSections.findIndex((s) => s.id === chunk.sectionId);
+        const sectionNumber = sectionIndex + 1;
         const section = state.project.sections.find((s) => s.id === chunk.sectionId);
-        const colorEntry = state.project.colorKey.colors.find((c) => c.hex === (chunk.style?.color ?? chunk.color));
-        const text = getTtsText(ttsConfig.contentMode, chunkNumber, section?.name, colorEntry?.label);
-        ttsEngineInstance.speak(text, ttsConfig);
+
+        // Detect section ending: check if next active chunk has different sectionId
+        const chunkIndex = activeChunks.findIndex((c) => c.id === chunkId);
+        const nextChunk = chunkIndex >= 0 ? activeChunks[chunkIndex + 1] : undefined;
+        const sectionEnding = !nextChunk || nextChunk.sectionId !== chunk.sectionId;
+
+        if (sectionEnding && ttsConfig.announceSections &&
+            (ttsConfig.sectionAnnounceAt === 'end' || ttsConfig.sectionAnnounceAt === 'both')) {
+          // Play section end SFX if configured
+          if (sfxEngineInstance && section?.sectionFormId) {
+            const resolvedSectionForm = resolveSectionForm(
+              section.sectionFormId, state.project.sectionScheme
+            );
+            if (resolvedSectionForm.sound &&
+                (resolvedSectionForm.sound.trigger === 'section-end' || resolvedSectionForm.sound.trigger === 'both')) {
+              const vol = resolvedSectionForm.sound.volume ?? resolvedSectionForm.sound.sfxRef.volume;
+              sfxEngineInstance.playSfx({ ...resolvedSectionForm.sound.sfxRef, volume: vol });
+            }
+          }
+
+          // Speak section end
+          const sectionText = `End of ${getSectionTtsText(section?.name, sectionNumber)}`;
+          const sectionVoice = section?.sectionFormId
+            ? resolveSectionForm(section.sectionFormId, state.project.sectionScheme).voice ?? undefined
+            : undefined;
+          ttsEngineInstance.speak(sectionText, ttsConfig, sectionVoice);
+        }
+
+        // TTS announcement at chunk end
+        if (ttsConfig.announceAt === 'end' || ttsConfig.announceAt === 'both') {
+          const colorEntry = state.project.colorKey.colors.find((c) => c.hex === (chunk.style?.color ?? chunk.color));
+          const resolvedForm = resolveChunkForm(chunk, state.project.scheme, state.project.settings.defaultAttributes);
+          const formLabel = resolvedForm.label || colorEntry?.label;
+          const text = getTtsText(
+            ttsConfig.contentMode, ttsConfig.chunkCountingMode,
+            projectChunkNumber, sectionChunkNumber, sectionNumber,
+            section?.name, formLabel
+          );
+          ttsEngineInstance.speak(text, ttsConfig, resolvedForm.voice ?? undefined);
+        }
       }
     });
 
@@ -125,6 +216,8 @@ function getOrCreateEngine(): PlaybackEngine {
       if (state.playback.paintingColor) {
         state.setPaintingColor(null);
       }
+      // Reset section tracking
+      lastPlayedSectionId = null;
     });
   }
 
@@ -230,4 +323,9 @@ export function usePlayback() {
 /** Get the SFX engine instance (for preview in config panels) */
 export function getSfxEngine(): SfxEngine | null {
   return sfxEngineInstance;
+}
+
+/** Get the TTS engine instance (for preview in config panels) */
+export function getTtsEngine(): TtsEngine | null {
+  return ttsEngineInstance;
 }

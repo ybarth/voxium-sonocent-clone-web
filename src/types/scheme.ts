@@ -40,6 +40,19 @@ export interface SoundAttribute {
   volume?: number; // 0-1, overrides sfxRef.volume
 }
 
+export interface VoiceAttribute {
+  voiceUri?: string;
+  pitch?: number; // 0-2, default 1
+}
+
+export type SectionSoundTrigger = 'section-begin' | 'section-end' | 'both';
+
+export interface SectionSoundAttribute {
+  sfxRef: SfxRef;
+  trigger: SectionSoundTrigger;
+  volume?: number; // 0-1
+}
+
 // ─── Form ───────────────────────────────────────────────────────────────────
 // A Form is a named combination of attributes that can be applied to chunks.
 // Replaces ColorKeyEntry as the primary chunk annotation unit.
@@ -52,6 +65,7 @@ export interface Form {
   texture?: TextureAttribute;
   shape?: ShapeAttribute;
   sound?: SoundAttribute;
+  voice?: VoiceAttribute;
 }
 
 // ─── Attribute Set ──────────────────────────────────────────────────────────
@@ -106,6 +120,7 @@ export interface ResolvedForm {
   texture: TextureAttribute | null;
   shape: ShapeAttribute;
   sound: SoundAttribute | null;
+  voice: VoiceAttribute | null;
 }
 
 // ─── Defaults ───────────────────────────────────────────────────────────────
@@ -124,6 +139,8 @@ export interface SectionForm {
   shortcutKey: number;        // 1-9, 0 for no shortcut
   color?: ColorAttribute;
   texture?: TextureAttribute;
+  sound?: SectionSoundAttribute;
+  voice?: VoiceAttribute;
 }
 
 export interface SectionScheme {
@@ -138,4 +155,6 @@ export interface ResolvedSectionForm {
   label: string;
   color: ColorAttribute;
   texture: TextureAttribute | null;
+  sound: SectionSoundAttribute | null;
+  voice: VoiceAttribute | null;
 }

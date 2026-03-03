@@ -1,5 +1,6 @@
 // TTS Engine — wraps Web Speech API for chunk announcements
-import type { TtsConfig } from '../types';
+import type { TtsConfig, TtsChunkCountingMode, TtsContentMode } from '../types';
+import type { VoiceAttribute } from '../types/scheme';
 
 export class TtsEngine {
   private synthesis: SpeechSynthesis;
@@ -38,8 +39,8 @@ export class TtsEngine {
     this.mainGainNode = gainNode;
   }
 
-  /** Speak text with config */
-  speak(text: string, config: TtsConfig) {
+  /** Speak text with config, optionally overriding voice/pitch from a form's VoiceAttribute */
+  speak(text: string, config: TtsConfig, voiceOverride?: VoiceAttribute) {
     console.log('[TTS] speak() called:', text, 'enabled:', config.enabled);
     if (!config.enabled) return;
 
@@ -48,10 +49,12 @@ export class TtsEngine {
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = config.speed;
+    utterance.pitch = voiceOverride?.pitch ?? config.pitch ?? 1.0;
 
-    // Find voice by URI
-    if (config.voiceUri) {
-      const voice = this.voices.find((v) => v.voiceURI === config.voiceUri);
+    // Resolve voice: override first, then config
+    const voiceUri = voiceOverride?.voiceUri || config.voiceUri;
+    if (voiceUri) {
+      const voice = this.voices.find((v) => v.voiceURI === voiceUri);
       if (voice) utterance.voice = voice;
     }
 
@@ -91,19 +94,45 @@ export class TtsEngine {
   }
 }
 
-/** Generate TTS text for a chunk based on content mode */
+/** Generate TTS text for a chunk based on content mode and counting mode */
 export function getTtsText(
-  contentMode: TtsConfig['contentMode'],
-  chunkNumber: number,
+  contentMode: TtsContentMode,
+  chunkCountingMode: TtsChunkCountingMode,
+  projectChunkNumber: number,
+  sectionChunkNumber: number,
+  sectionNumber: number,
   sectionName?: string,
   colorLabel?: string
 ): string {
-  switch (contentMode) {
-    case 'chunk-number':
-      return `Chunk ${chunkNumber}`;
+  let numberPart: string;
+
+  switch (chunkCountingMode) {
+    case 'section-relative':
+      numberPart = `${sectionChunkNumber}`;
+      break;
+    case 'project-relative':
+      numberPart = `${projectChunkNumber}`;
+      break;
     case 'section-and-chunk':
-      return sectionName ? `${sectionName}, Chunk ${chunkNumber}` : `Chunk ${chunkNumber}`;
-    case 'color-label':
-      return colorLabel ? `${colorLabel}, Chunk ${chunkNumber}` : `Chunk ${chunkNumber}`;
+      numberPart = sectionName
+        ? `${sectionName}, ${sectionChunkNumber}`
+        : `Section ${sectionNumber}, ${sectionChunkNumber}`;
+      break;
+    case 'full':
+      numberPart = sectionName
+        ? `${sectionName}, ${sectionChunkNumber} of ${projectChunkNumber}`
+        : `Section ${sectionNumber}, ${sectionChunkNumber} of ${projectChunkNumber}`;
+      break;
   }
+
+  if (contentMode === 'color-label' && colorLabel) {
+    return `${colorLabel}, ${numberPart}`;
+  }
+
+  return numberPart;
+}
+
+/** Generate TTS text for a section announcement */
+export function getSectionTtsText(sectionName: string | undefined, sectionNumber: number): string {
+  return sectionName || `Section ${sectionNumber}`;
 }

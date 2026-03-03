@@ -6,7 +6,7 @@ import { COMMAND_REGISTRY, COMMAND_CATEGORIES, type CommandCategory } from '../.
 import { PRESET_LABELS, type PresetId, normalizeDescriptor } from '../../commands/keybindingPresets';
 import { KeybindingRow } from './KeybindingRow';
 import { TtsEngine } from '../../utils/ttsEngine';
-import type { TtsConfig, TtsAnnounceAt, TtsContentMode } from '../../types';
+import type { TtsAnnounceAt, TtsContentMode, TtsChunkCountingMode } from '../../types';
 import { getApiKey, setApiKey, clearApiKey, hasApiKey } from '../../utils/aiGeneration';
 import {
   getElevenLabsApiKey, setElevenLabsApiKey, clearElevenLabsApiKey, hasElevenLabsApiKey,
@@ -288,7 +288,7 @@ function GeneralSettings() {
 
   const handlePreviewTts = () => {
     const tts = new TtsEngine();
-    tts.speak('Chunk 3, Key Point', { ...ttsConfig, enabled: true, duckMainAudio: false });
+    tts.speak('3, Key Point', { ...ttsConfig, enabled: true, duckMainAudio: false });
   };
 
   return (
@@ -328,12 +328,43 @@ function GeneralSettings() {
             title="Content Mode"
             value={ttsConfig.contentMode}
             options={[
-              { value: 'chunk-number', label: 'Chunk Number' },
-              { value: 'section-and-chunk', label: 'Section + Chunk' },
-              { value: 'color-label', label: 'Color Label + Chunk' },
+              { value: 'chunk-number', label: 'Number Only' },
+              { value: 'color-label', label: 'Color Label + Number' },
             ]}
             onChange={(v) => setTtsConfig({ contentMode: v as TtsContentMode })}
           />
+
+          <SettingSelectRow
+            title="Chunk Counting"
+            value={ttsConfig.chunkCountingMode}
+            options={[
+              { value: 'section-relative', label: 'Within Section (1, 2, 3...)' },
+              { value: 'project-relative', label: 'Within Project (1, 2, ... N)' },
+              { value: 'section-and-chunk', label: 'Section + Chunk (Section 2, 5)' },
+              { value: 'full', label: 'Full (Section 2, 5 of 47)' },
+            ]}
+            onChange={(v) => setTtsConfig({ chunkCountingMode: v as TtsChunkCountingMode })}
+          />
+
+          <SettingToggleRow
+            title="Announce Section Changes"
+            description="Speak section name when playback enters or leaves a section"
+            value={ttsConfig.announceSections}
+            onChange={() => setTtsConfig({ announceSections: !ttsConfig.announceSections })}
+          />
+
+          {ttsConfig.announceSections && (
+            <SettingSelectRow
+              title="Section Announce At"
+              value={ttsConfig.sectionAnnounceAt}
+              options={[
+                { value: 'begin', label: 'Section Begin' },
+                { value: 'end', label: 'Section End' },
+                { value: 'both', label: 'Both' },
+              ]}
+              onChange={(v) => setTtsConfig({ sectionAnnounceAt: v as 'begin' | 'end' | 'both' })}
+            />
+          )}
 
           <SettingSliderRow
             title="Speed"
@@ -356,6 +387,16 @@ function GeneralSettings() {
               onChange={(v) => setTtsConfig({ voiceUri: v })}
             />
           )}
+
+          <SettingSliderRow
+            title="Pitch"
+            value={ttsConfig.pitch}
+            min={0}
+            max={2}
+            step={0.1}
+            display={ttsConfig.pitch.toFixed(1)}
+            onChange={(v) => setTtsConfig({ pitch: v })}
+          />
 
           <SettingToggleRow
             title="Duck Main Audio"

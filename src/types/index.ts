@@ -70,13 +70,18 @@ export interface SfxMapping {
 // ─── TTS types ───────────────────────────────────────────────────────────────
 
 export type TtsAnnounceAt = 'start' | 'end' | 'both';
-export type TtsContentMode = 'chunk-number' | 'section-and-chunk' | 'color-label';
+export type TtsContentMode = 'chunk-number' | 'color-label';
+export type TtsChunkCountingMode = 'section-relative' | 'project-relative' | 'section-and-chunk' | 'full';
 
 export interface TtsConfig {
   enabled: boolean;
   announceAt: TtsAnnounceAt;
   contentMode: TtsContentMode;
+  chunkCountingMode: TtsChunkCountingMode;
+  announceSections: boolean;
+  sectionAnnounceAt: 'begin' | 'end' | 'both';
   speed: number;     // 0.5-2.0
+  pitch: number;     // 0-2, default 1
   voiceUri: string;  // SpeechSynthesisVoice.voiceURI
   duckMainAudio: boolean;
   duckLevel: number; // 0-1, how much to reduce main audio during TTS
@@ -303,7 +308,11 @@ export const DEFAULT_TTS_CONFIG: TtsConfig = {
   enabled: false,
   announceAt: 'start',
   contentMode: 'chunk-number',
+  chunkCountingMode: 'section-relative',
+  announceSections: true,
+  sectionAnnounceAt: 'begin',
   speed: 1.0,
+  pitch: 1.0,
   voiceUri: '',
   duckMainAudio: true,
   duckLevel: 0.3,

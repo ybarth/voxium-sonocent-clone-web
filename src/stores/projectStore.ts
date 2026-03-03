@@ -6,7 +6,7 @@ import type {
   ChunkStyle, SfxMapping, TtsConfig, FilterCriteria,
   ColorKeyTemplate, ColorKeyEntry,
 } from '../types';
-import { DEFAULT_COLORS, DEFAULT_SETTINGS } from '../types';
+import { DEFAULT_COLORS, DEFAULT_SETTINGS, DEFAULT_TTS_CONFIG } from '../types';
 import type { Scheme, Form, DefaultAttributes, SectionScheme, SectionForm } from '../types/scheme';
 import { migrateColorKeyToScheme } from '../utils/schemeMigration';
 import { ALL_BUILTIN_SCHEMES } from '../constants/schemes';
@@ -267,6 +267,29 @@ const initialProject: Project = {
   undoStack: [],
   redoStack: [],
 };
+
+/**
+ * Migrate legacy TtsConfig to current schema.
+ * Handles: missing chunkCountingMode, old 'section-and-chunk' contentMode,
+ * missing announceSections/sectionAnnounceAt/pitch.
+ */
+function migrateTtsConfig(config: any): TtsConfig {
+  const migrated = { ...DEFAULT_TTS_CONFIG, ...config };
+
+  // Migrate old 'section-and-chunk' contentMode to new chunkCountingMode
+  if (config.contentMode === 'section-and-chunk') {
+    migrated.contentMode = 'chunk-number';
+    migrated.chunkCountingMode = 'section-and-chunk';
+  }
+
+  // Ensure new fields have defaults
+  if (migrated.chunkCountingMode === undefined) migrated.chunkCountingMode = 'section-relative';
+  if (migrated.announceSections === undefined) migrated.announceSections = true;
+  if (migrated.sectionAnnounceAt === undefined) migrated.sectionAnnounceAt = 'begin';
+  if (migrated.pitch === undefined) migrated.pitch = 1.0;
+
+  return migrated;
+}
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   project: initialProject,
@@ -1968,7 +1991,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ...s.project,
         settings: {
           ...s.project.settings,
-          ttsConfig: { ...s.project.settings.ttsConfig, ...partial },
+          ttsConfig: migrateTtsConfig({ ...s.project.settings.ttsConfig, ...partial }),
         },
       },
     }));
