@@ -3,6 +3,7 @@ import { useCommandKeybindings } from './hooks/useCommandKeybindings';
 import { usePlaybackSync } from './hooks/usePlayback';
 import { useLayoutStore } from './stores/layoutStore';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { ClipboardPopup } from './components/sidebar/ClipboardPopup';
 
 function App() {
   usePlaybackSync();
@@ -15,6 +16,7 @@ function App() {
     <>
       <AppLayout />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      <ClipboardPopup />
     </>
   );
 }

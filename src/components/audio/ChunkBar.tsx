@@ -306,6 +306,7 @@ export const ChunkBar = memo(function ChunkBar({
   return (
     <div
       ref={barRef}
+      data-chunk-id={chunk.id}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       draggable={isSelected}

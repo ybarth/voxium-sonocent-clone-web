@@ -13,6 +13,7 @@ import { SectionFormRow } from './SectionFormRow';
 import { SectionFormEditor } from './SectionFormEditor';
 import { FilterPanel } from './FilterPanel';
 import { TagManager } from './TagManager';
+import { ClipboardPanel } from './ClipboardPanel';
 import { SchemeManager } from './SchemeManager';
 import { getFlatSectionOrder } from '../../utils/sectionTree';
 
@@ -269,6 +270,9 @@ export function SchemeSidebar() {
 
       {/* Tag Manager */}
       <TagManager />
+
+      {/* Clipboard History */}
+      <ClipboardPanel />
 
       {/* Scheme Manager */}
       <SchemeManager />

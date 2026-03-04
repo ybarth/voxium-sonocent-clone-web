@@ -25,9 +25,12 @@ interface LayoutStore {
   dockviewApi: DockviewApi | null;
   sidebarPanelApi: SidebarApi | null;
   settingsOpen: boolean;
+  clipboardPopupOpen: boolean;
 
   // Actions
   setSettingsOpen: (open: boolean) => void;
+  toggleClipboardPopup: () => void;
+  setClipboardPopupOpen: (open: boolean) => void;
   setLocked: (locked: boolean) => void;
   toggleLocked: () => void;
   setActivePreset: (preset: LayoutPresetId) => void;
@@ -51,8 +54,11 @@ export const useLayoutStore = create<LayoutStore>()(
       dockviewApi: null,
       sidebarPanelApi: null,
       settingsOpen: false,
+      clipboardPopupOpen: false,
 
       setSettingsOpen: (open) => set({ settingsOpen: open }),
+      toggleClipboardPopup: () => set((s) => ({ clipboardPopupOpen: !s.clipboardPopupOpen })),
+      setClipboardPopupOpen: (open) => set({ clipboardPopupOpen: open }),
 
       setLocked: (locked) => {
         if (locked) {

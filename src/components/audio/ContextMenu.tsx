@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
+import { useClipboardStore } from '../../stores/clipboardStore';
 import { importMultipleFiles } from '../../utils/importAudio';
 import type { StyleEditorTarget } from '../color/StyleEditor';
 import type { ChunkStyle } from '../../types';
@@ -28,7 +29,7 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
   const clipboardCut = useProjectStore((s) => s.clipboardCut);
   const clipboardCopy = useProjectStore((s) => s.clipboardCopy);
   const clipboardPaste = useProjectStore((s) => s.clipboardPaste);
-  const clipboardMode = useProjectStore((s) => s.clipboard.mode);
+  const hasClipboardItems = useClipboardStore((s) => s.items.length > 0);
   const deleteChunks = useProjectStore((s) => s.deleteChunks);
 
   const showMoveTake = take.chunkIds.length > 0 && !isRecording;
@@ -155,7 +156,7 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
           onClick={() => { clipboardCopy(); onClose(); }}
         />
       )}
-      {clipboardMode && (
+      {hasClipboardItems && (
         <CtxMenuItem
           label="Paste"
           shortcut="Ctrl+V"

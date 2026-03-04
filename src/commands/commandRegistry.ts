@@ -290,6 +290,34 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     id: 'edit.paste', label: 'Paste', category: 'clipboard',
     description: 'Paste chunks from clipboard', audioPaneOnly: true,
   },
+  'clipboard.togglePanel': {
+    id: 'clipboard.togglePanel', label: 'Toggle Clipboard Panel', category: 'clipboard',
+    description: 'Show or hide the clipboard history panel',
+  },
+  'clipboard.togglePopup': {
+    id: 'clipboard.togglePopup', label: 'Toggle Clipboard Popup', category: 'clipboard',
+    description: 'Open or close the centered clipboard popup',
+  },
+  'clipboard.clearAll': {
+    id: 'clipboard.clearAll', label: 'Clear Clipboard', category: 'clipboard',
+    description: 'Remove all items from clipboard history',
+  },
+  'clipboard.togglePasteMode': {
+    id: 'clipboard.togglePasteMode', label: 'Toggle Paste Mode', category: 'clipboard',
+    description: 'Switch between sticky and sequential paste modes',
+  },
+  'clipboard.toggleInsertionPosition': {
+    id: 'clipboard.toggleInsertionPosition', label: 'Toggle Insertion Position', category: 'clipboard',
+    description: 'Switch between top and bottom insertion for new clipboard items',
+  },
+  'clipboard.undo': {
+    id: 'clipboard.undo', label: 'Clipboard Undo', category: 'clipboard',
+    description: 'Undo the last clipboard action',
+  },
+  'clipboard.redo': {
+    id: 'clipboard.redo', label: 'Clipboard Redo', category: 'clipboard',
+    description: 'Redo the last undone clipboard action',
+  },
 
   // --- Selection Checkmarks ---
   'selection.toggleCheck': {

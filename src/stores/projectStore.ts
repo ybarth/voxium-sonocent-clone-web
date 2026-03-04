@@ -13,6 +13,7 @@ import { STANDARD_SECTION_SCHEME, ALL_BUILTIN_SECTION_SCHEMES } from '../constan
 import { STANDARD_PROJECT_SCHEME, ALL_BUILTIN_PROJECT_SCHEMES } from '../constants/projectSchemes';
 import { getFlatSectionOrder } from '../utils/sectionTree';
 import { BUILTIN_TEMPLATES } from '../constants/templates';
+import { useClipboardStore } from './clipboardStore';
 
 // --- Cursor model ---
 // The cursor is a precise position: which chunk (or null if between/outside)
@@ -65,7 +66,7 @@ export interface PaintbrushMode {
   scopeFilterSectionFormId?: string;
 }
 
-// Virtual clipboard for cut/copy/paste
+// Legacy ClipboardState kept for interface compatibility (actual state lives in clipboardStore)
 export interface ClipboardState {
   chunks: Chunk[];
   sourceSectionId: string | null;
@@ -275,12 +276,12 @@ interface ProjectStore {
   clipboard: ClipboardState;
   clipboardCut: () => void;
   clipboardCopy: () => void;
-  clipboardPaste: () => void;
+  clipboardPaste: (specificItemId?: string) => void;
 
   // Phase 2.5: Drag-and-Drop Chunk Reorder
   moveChunksToPosition: (chunkIds: string[], targetSectionId: string, targetOrderIndex: number) => void;
 
-  pushUndo: (type: UndoAction['type']) => void;
+  pushUndo: (type: UndoAction['type'], clipboardSnapshot?: import('../types/clipboard').ClipboardItem[]) => void;
   undo: () => void;
   redo: () => void;
 }
@@ -1739,7 +1740,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }));
   },
 
-  pushUndo: (type) =>
+  pushUndo: (type, clipboardSnapshot?) =>
     set((s) => ({
       project: {
         ...s.project,
@@ -1751,6 +1752,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             previousState: {
               chunks: JSON.parse(JSON.stringify(s.project.chunks)),
               sections: JSON.parse(JSON.stringify(s.project.sections)),
+              ...(clipboardSnapshot ? { clipboardItems: clipboardSnapshot } : {}),
             },
           },
         ],
@@ -1758,61 +1760,79 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       },
     })),
 
-  undo: () =>
-    set((s) => {
-      const stack = s.project.undoStack;
-      if (stack.length === 0) return s;
-      const action = stack[stack.length - 1];
-      return {
-        project: {
-          ...s.project,
-          chunks: action.previousState.chunks,
-          sections: action.previousState.sections,
-          undoStack: stack.slice(0, -1),
-          redoStack: [
-            ...s.project.redoStack,
-            {
-              type: action.type,
-              timestamp: Date.now(),
-              previousState: {
-                chunks: JSON.parse(JSON.stringify(s.project.chunks)),
-                sections: JSON.parse(JSON.stringify(s.project.sections)),
-              },
-            },
-          ],
-          updatedAt: new Date(),
-        },
-        take: { chunkIds: [], originalPosition: null, moved: false },
-      };
-    }),
+  undo: () => {
+    const undoState = get();
+    const stack = undoState.project.undoStack;
+    if (stack.length === 0) return;
+    const action = stack[stack.length - 1];
 
-  redo: () =>
-    set((s) => {
-      const stack = s.project.redoStack;
-      if (stack.length === 0) return s;
-      const action = stack[stack.length - 1];
-      return {
-        project: {
-          ...s.project,
-          chunks: action.previousState.chunks,
-          sections: action.previousState.sections,
-          redoStack: stack.slice(0, -1),
-          undoStack: [
-            ...s.project.undoStack,
-            {
-              type: action.type,
-              timestamp: Date.now(),
-              previousState: {
-                chunks: JSON.parse(JSON.stringify(s.project.chunks)),
-                sections: JSON.parse(JSON.stringify(s.project.sections)),
-              },
+    // If this action has a clipboard snapshot, capture current clipboard for redo and restore
+    let currentClipboardSnapshot: import('../types/clipboard').ClipboardItem[] | undefined;
+    if (action.previousState.clipboardItems) {
+      currentClipboardSnapshot = useClipboardStore.getState().snapshotItems();
+      useClipboardStore.getState().restoreItems(action.previousState.clipboardItems);
+    }
+
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: action.previousState.chunks,
+        sections: action.previousState.sections,
+        undoStack: stack.slice(0, -1),
+        redoStack: [
+          ...s.project.redoStack,
+          {
+            type: action.type,
+            timestamp: Date.now(),
+            previousState: {
+              chunks: JSON.parse(JSON.stringify(s.project.chunks)),
+              sections: JSON.parse(JSON.stringify(s.project.sections)),
+              ...(currentClipboardSnapshot ? { clipboardItems: currentClipboardSnapshot } : {}),
             },
-          ],
-          updatedAt: new Date(),
-        },
-        take: { chunkIds: [], originalPosition: null, moved: false },
-      };
-    }),
+          },
+        ],
+        updatedAt: new Date(),
+      },
+      take: { chunkIds: [], originalPosition: null, moved: false },
+    }));
+  },
+
+  redo: () => {
+    const redoState = get();
+    const stack = redoState.project.redoStack;
+    if (stack.length === 0) return;
+    const action = stack[stack.length - 1];
+
+    // If this action has a clipboard snapshot, capture current clipboard for undo and restore
+    let currentClipboardSnapshot: import('../types/clipboard').ClipboardItem[] | undefined;
+    if (action.previousState.clipboardItems) {
+      currentClipboardSnapshot = useClipboardStore.getState().snapshotItems();
+      useClipboardStore.getState().restoreItems(action.previousState.clipboardItems);
+    }
+
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: action.previousState.chunks,
+        sections: action.previousState.sections,
+        redoStack: stack.slice(0, -1),
+        undoStack: [
+          ...s.project.undoStack,
+          {
+            type: action.type,
+            timestamp: Date.now(),
+            previousState: {
+              chunks: JSON.parse(JSON.stringify(s.project.chunks)),
+              sections: JSON.parse(JSON.stringify(s.project.sections)),
+              ...(currentClipboardSnapshot ? { clipboardItems: currentClipboardSnapshot } : {}),
+            },
+          },
+        ],
+        updatedAt: new Date(),
+      },
+      take: { chunkIds: [], originalPosition: null, moved: false },
+    }));
+  },
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Phase 2: Rich Styling
@@ -3168,6 +3188,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const chunks = state.project.chunks.filter(c => selectedIds.includes(c.id) && !c.isDeleted);
     if (chunks.length === 0) return;
 
+    // Add to clipboard history store
+    useClipboardStore.getState().addItem(
+      chunks.map(c => ({ ...c })),
+      'cut',
+      chunks[0].sectionId,
+    );
+
+    // Keep legacy clipboard in sync for any remaining direct references
     set({
       clipboard: {
         chunks: chunks.map(c => ({ ...c })),
@@ -3185,6 +3213,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const chunks = state.project.chunks.filter(c => selectedIds.includes(c.id) && !c.isDeleted);
     if (chunks.length === 0) return;
 
+    // Add to clipboard history store
+    useClipboardStore.getState().addItem(
+      chunks.map(c => ({ ...c })),
+      'copy',
+      chunks[0].sectionId,
+    );
+
+    // Keep legacy clipboard in sync
     set({
       clipboard: {
         chunks: chunks.map(c => ({ ...c })),
@@ -3194,10 +3230,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
   },
 
-  clipboardPaste: () => {
+  clipboardPaste: (specificItemId?: string) => {
     const state = get();
-    const { clipboard, playback, project } = state;
-    if (!clipboard.mode || clipboard.chunks.length === 0) return;
+    const cbStore = useClipboardStore.getState();
+
+    // Get the item to paste — either a specific item or the current paste target
+    const item = specificItemId
+      ? cbStore.pasteSpecificItem(specificItemId)
+      : cbStore.getItemToPaste();
+    if (!item) return;
+
+    const { playback, project } = state;
 
     // Determine target section: insertion point section, or current chunk's section, or first section
     const targetSectionId =
@@ -3214,11 +3257,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       .sort((a, b) => a.orderIndex - b.orderIndex);
     let insertAt = playback.insertionPoint?.orderIndex ?? existingInSection.length;
 
-    state.pushUndo('move');
+    // Snapshot clipboard before paste so undo can restore consumed cut items
+    const clipboardSnapshot = cbStore.snapshotItems();
+    state.pushUndo('move', clipboardSnapshot);
 
-    if (clipboard.mode === 'cut') {
+    if (item.mode === 'cut') {
       // Move: delete originals, insert at target
-      const origIds = clipboard.chunks.map(c => c.id);
+      const origIds = item.chunks.map(c => c.id);
       set((s) => {
         // Remove originals
         let updatedChunks = s.project.chunks.map(c =>
@@ -3227,11 +3272,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         // Bump existing chunks at target to make room
         updatedChunks = updatedChunks.map(c =>
           c.sectionId === targetSectionId && !c.isDeleted && c.orderIndex >= insertAt
-            ? { ...c, orderIndex: c.orderIndex + clipboard.chunks.length }
+            ? { ...c, orderIndex: c.orderIndex + item.chunks.length }
             : c
         );
         // Insert clipboard chunks at target
-        const pasted = clipboard.chunks.map((c, i) => ({
+        const pasted = item.chunks.map((c, i) => ({
           ...c,
           id: uuid(),
           sectionId: targetSectionId,
@@ -3252,15 +3297,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           },
         };
       });
+      // Cut items are consumed after paste
+      cbStore.removeItem(item.id);
     } else {
       // Copy: duplicate at target
       set((s) => {
         let updatedChunks = s.project.chunks.map(c =>
           c.sectionId === targetSectionId && !c.isDeleted && c.orderIndex >= insertAt
-            ? { ...c, orderIndex: c.orderIndex + clipboard.chunks.length }
+            ? { ...c, orderIndex: c.orderIndex + item.chunks.length }
             : c
         );
-        const pasted = clipboard.chunks.map((c, i) => ({
+        const pasted = item.chunks.map((c, i) => ({
           ...c,
           id: uuid(),
           sectionId: targetSectionId,
@@ -3280,6 +3327,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           },
         };
       });
+    }
+
+    // Advance cursor for sequential paste mode
+    if (cbStore.pasteMode === 'sequential' && !specificItemId) {
+      cbStore.advancePasteCursor();
     }
   },
 

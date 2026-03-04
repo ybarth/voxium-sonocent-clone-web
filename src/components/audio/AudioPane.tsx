@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useRef } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
 import { SectionView } from './SectionView';
@@ -10,6 +10,7 @@ import type { ChunkStyle } from '../../types';
 import { importMultipleFiles } from '../../utils/importAudio';
 import { getFlatSectionOrder, hasCollapsedAncestor } from '../../utils/sectionTree';
 import { useModifierKeys, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
+import { useMarqueeSelection } from '../../hooks/useMarqueeSelection';
 
 interface ContextMenuState {
   x: number;
@@ -229,6 +230,9 @@ export function AudioPane() {
 
   const classicMode = useProjectStore((s) => s.project.settings.classicMode);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const { marquee, onMouseDown: onMarqueeMouseDown } = useMarqueeSelection(scrollContainerRef);
+
   let globalOffset = 0;
 
   return (
@@ -246,7 +250,11 @@ export function AudioPane() {
       }}
     >
       <TakeBanner />
-      <div style={{ flex: 1, overflow: 'auto', padding: classicMode ? '6px' : '8px' }}>
+      <div
+        ref={scrollContainerRef}
+        onMouseDown={onMarqueeMouseDown}
+        style={{ flex: 1, overflow: 'auto', padding: classicMode ? '6px' : '8px', position: 'relative' }}
+      >
         {orderedSections.map((section) => {
           if (hiddenSectionIds.has(section.id)) return null;
 
@@ -311,6 +319,24 @@ export function AudioPane() {
               Supports: mp3, wav, m4a, ogg, webm, flac
             </div>
           </div>
+        )}
+
+        {/* Marquee selection overlay */}
+        {marquee && (
+          <div
+            style={{
+              position: 'absolute',
+              left: marquee.left,
+              top: marquee.top,
+              width: marquee.width,
+              height: marquee.height,
+              backgroundColor: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.5)',
+              borderRadius: 2,
+              pointerEvents: 'none',
+              zIndex: 100,
+            }}
+          />
         )}
       </div>
 

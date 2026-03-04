@@ -4,6 +4,7 @@
 
 import { useProjectStore } from '../stores/projectStore';
 import { useLayoutStore } from '../stores/layoutStore';
+import { useClipboardStore } from '../stores/clipboardStore';
 
 export type TransportCallbacks = {
   togglePlay: () => void;
@@ -245,6 +246,32 @@ export function executeCommand(commandId: string): boolean {
       return true;
     case 'edit.paste':
       state.clipboardPaste();
+      return true;
+    case 'clipboard.clearAll': {
+      useClipboardStore.getState().clearAll();
+      return true;
+    }
+    case 'clipboard.togglePasteMode': {
+      const cb = useClipboardStore.getState();
+      cb.setPasteMode(cb.pasteMode === 'sticky' ? 'sequential' : 'sticky');
+      return true;
+    }
+    case 'clipboard.toggleInsertionPosition': {
+      const cb = useClipboardStore.getState();
+      cb.setInsertionPosition(cb.insertionPosition === 'top' ? 'bottom' : 'top');
+      return true;
+    }
+    case 'clipboard.togglePanel':
+      // Panel toggle is handled by UI layer (SchemeSidebar); command just exists for keybinding
+      return true;
+    case 'clipboard.togglePopup':
+      useLayoutStore.getState().toggleClipboardPopup();
+      return true;
+    case 'clipboard.undo':
+      useClipboardStore.getState().clipboardUndo();
+      return true;
+    case 'clipboard.redo':
+      useClipboardStore.getState().clipboardRedo();
       return true;
 
     // --- Selection Checkmarks ---

@@ -6,6 +6,7 @@ import {
   Undo2, Redo2, Filter, Wand2, Sun, Moon, CheckSquare, Copy, ClipboardPaste,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
+import { useClipboardStore } from '../../stores/clipboardStore';
 import { usePlayback } from '../../hooks/usePlayback';
 import { useRecorder } from '../../hooks/useRecorder';
 import { importMultipleFiles } from '../../utils/importAudio';
@@ -39,7 +40,7 @@ export function Toolbar() {
   const setCheckSelectionMode = useProjectStore((s) => s.setCheckSelectionMode);
   const checkedChunkIds = useProjectStore((s) => s.checkedChunkIds);
   const checkedSectionIds = useProjectStore((s) => s.checkedSectionIds);
-  const clipboard = useProjectStore((s) => s.clipboard);
+  const hasClipboardItems = useClipboardStore((s) => s.items.length > 0);
   const clipboardCut = useProjectStore((s) => s.clipboardCut);
   const clipboardCopy = useProjectStore((s) => s.clipboardCopy);
   const clipboardPaste = useProjectStore((s) => s.clipboardPaste);
@@ -425,10 +426,10 @@ export function Toolbar() {
       <ToolbarButton
         icon={<ClipboardPaste size={14} />}
         label="Paste"
-        onClick={clipboardPaste}
-        disabled={!clipboard.mode}
+        onClick={() => clipboardPaste()}
+        disabled={!hasClipboardItems}
         commandId="edit.paste"
-        active={!!clipboard.mode}
+        active={hasClipboardItems}
       />
 
       <Divider />

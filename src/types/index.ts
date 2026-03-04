@@ -4,6 +4,7 @@
 
 import type { Scheme, DefaultAttributes, SectionScheme, ProjectScheme } from './scheme';
 import { DEFAULT_FORM_ATTRIBUTES } from './scheme';
+import type { ClipboardItem } from './clipboard';
 
 // ─── Texture types ───────────────────────────────────────────────────────────
 
@@ -287,6 +288,7 @@ export interface UndoAction {
   previousState: {
     chunks: Chunk[];
     sections: Section[];
+    clipboardItems?: ClipboardItem[];
   };
 }
 

@@ -87,6 +87,7 @@ export const ABLETON_PRESET: KeybindingMap = {
   'edit.cut':  'Ctrl+X',
   'edit.copy': 'Ctrl+C',
   'edit.paste': 'Ctrl+V',
+  'clipboard.togglePopup': 'B',
 
   // Settings
   'app.openSettings': 'Ctrl+,',
@@ -164,6 +165,7 @@ export const PROTOOLS_PRESET: KeybindingMap = {
   'edit.cut':  'Ctrl+X',
   'edit.copy': 'Ctrl+C',
   'edit.paste': 'Ctrl+V',
+  'clipboard.togglePopup': 'B',
 
   // Settings
   'app.openSettings': 'Ctrl+,',
@@ -241,6 +243,7 @@ export const LOGIC_CUBASE_PRESET: KeybindingMap = {
   'edit.cut':  'Ctrl+X',
   'edit.copy': 'Ctrl+C',
   'edit.paste': 'Ctrl+V',
+  'clipboard.togglePopup': 'B',
 
   // Settings
   'app.openSettings': 'Ctrl+,',
@@ -318,6 +321,7 @@ export const REAPER_PRESET: KeybindingMap = {
   'edit.cut':  'Ctrl+X',
   'edit.copy': 'Ctrl+C',
   'edit.paste': 'Ctrl+V',
+  'clipboard.togglePopup': 'B',
 
   // Settings
   'app.openSettings': 'Ctrl+,',
@@ -347,6 +351,8 @@ export function eventToDescriptor(e: KeyboardEvent): string {
 
   let key = e.key;
   if (key === ' ') key = 'Space';
+  // Normalise single alpha chars to uppercase to match preset conventions (e.g. 'B', 'M')
+  if (key.length === 1 && /[a-z]/.test(key)) key = key.toUpperCase();
   // Avoid double-counting modifier keys themselves
   if (['Control', 'Meta', 'Alt', 'Shift'].includes(key)) return '';
 
