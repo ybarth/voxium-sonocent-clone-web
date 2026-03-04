@@ -55,8 +55,27 @@ export const COOL_SECTION_SCHEME: SectionScheme = {
   forms: coolForms,
 };
 
+// ─── Standard Sections (6 forms) ─────────────────────────────────────────────
+
+const standardForms: SectionForm[] = [
+  { id: 'sec-std-1', label: 'Section 1', shortcutKey: 1, color: { hex: '#2563EB', alpha: 1 } },
+  { id: 'sec-std-2', label: 'Section 2', shortcutKey: 2, color: { hex: '#DC2626', alpha: 1 } },
+  { id: 'sec-std-3', label: 'Section 3', shortcutKey: 3, color: { hex: '#16A34A', alpha: 1 } },
+  { id: 'sec-std-4', label: 'Section 4', shortcutKey: 4, color: { hex: '#9333EA', alpha: 1 } },
+  { id: 'sec-std-5', label: 'Section 5', shortcutKey: 5, color: { hex: '#EA580C', alpha: 1 } },
+  { id: 'sec-std-6', label: 'Section 6', shortcutKey: 6, color: { hex: '#06B6D4', alpha: 1 } },
+];
+
+export const STANDARD_SECTION_SCHEME: SectionScheme = {
+  id: 'section-scheme-standard',
+  name: 'Standard Sections',
+  builtIn: true,
+  forms: standardForms,
+};
+
 // All built-in section schemes
 export const ALL_BUILTIN_SECTION_SCHEMES: SectionScheme[] = [
+  STANDARD_SECTION_SCHEME,
   VIVID_SECTION_SCHEME,
   WARM_SECTION_SCHEME,
   COOL_SECTION_SCHEME,

@@ -3,7 +3,16 @@
 
 import type { ProjectScheme } from '../types/scheme';
 
+export const STANDARD_PROJECT_SCHEME: ProjectScheme = {
+  id: 'project-scheme-standard',
+  name: 'Standard',
+  builtIn: true,
+  chunkSchemeId: 'scheme-standard',
+  sectionSchemeId: 'section-scheme-standard',
+};
+
 export const BUILTIN_PROJECT_SCHEMES: ProjectScheme[] = [
+  STANDARD_PROJECT_SCHEME,
   {
     id: 'project-scheme-lecture-vivid',
     name: 'Lecture + Vivid',

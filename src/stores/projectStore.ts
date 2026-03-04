@@ -8,10 +8,9 @@ import type {
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS, DEFAULT_TTS_CONFIG } from '../types';
 import type { Scheme, Form, DefaultAttributes, SectionScheme, SectionForm, ProjectScheme } from '../types/scheme';
-import { migrateColorKeyToScheme } from '../utils/schemeMigration';
-import { ALL_BUILTIN_SCHEMES } from '../constants/schemes';
-import { VIVID_SECTION_SCHEME, ALL_BUILTIN_SECTION_SCHEMES } from '../constants/sectionSchemes';
-import { ALL_BUILTIN_PROJECT_SCHEMES } from '../constants/projectSchemes';
+import { STANDARD_SCHEME, ALL_BUILTIN_SCHEMES } from '../constants/schemes';
+import { STANDARD_SECTION_SCHEME, ALL_BUILTIN_SECTION_SCHEMES } from '../constants/sectionSchemes';
+import { STANDARD_PROJECT_SCHEME, ALL_BUILTIN_PROJECT_SCHEMES } from '../constants/projectSchemes';
 import { getFlatSectionOrder } from '../utils/sectionTree';
 import { BUILTIN_TEMPLATES } from '../constants/templates';
 
@@ -248,12 +247,7 @@ const initialSection: Section = {
   sectionFormId: null,
 };
 
-const initialScheme: Scheme = migrateColorKeyToScheme(
-  DEFAULT_COLORS,
-  {},
-  [],
-  'Default',
-);
+const initialScheme: Scheme = STANDARD_SCHEME;
 
 const initialProject: Project = {
   id: uuid(),
@@ -272,10 +266,10 @@ const initialProject: Project = {
   templates: [],
   scheme: initialScheme,
   schemes: [initialScheme],
-  sectionScheme: VIVID_SECTION_SCHEME,
-  sectionSchemes: [VIVID_SECTION_SCHEME],
-  projectScheme: null,
-  projectSchemes: [],
+  sectionScheme: STANDARD_SECTION_SCHEME,
+  sectionSchemes: [STANDARD_SECTION_SCHEME],
+  projectScheme: STANDARD_PROJECT_SCHEME,
+  projectSchemes: [STANDARD_PROJECT_SCHEME],
   undoStack: [],
   redoStack: [],
 };
