@@ -4,6 +4,7 @@ import { SfxEngine, resolveSfxForChunkForm } from '../utils/sfxEngine';
 import { TtsEngine, getTtsText, getSectionTtsText } from '../utils/ttsEngine';
 import { resolveChunkForm, resolveSectionForm } from '../utils/formResolver';
 import { useProjectStore } from '../stores/projectStore';
+import { getFlatSectionOrder } from '../utils/sectionTree';
 
 // Module-level singleton engines — shared across all components
 let engineInstance: PlaybackEngine | null = null;
@@ -235,6 +236,9 @@ export function usePlaybackSync() {
   const volume = useProjectStore((s) => s.project.settings.volume);
   const playbackSpeed = useProjectStore((s) => s.project.settings.playbackSpeed);
   const sfxMappings = useProjectStore((s) => s.project.settings.sfxMappings);
+  const loopMode = useProjectStore((s) => s.project.settings.loopMode);
+  const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
+  const selectedSectionIds = useProjectStore((s) => s.selection.selectedSectionIds);
 
   // Sync buffers and chunks whenever they change
   useEffect(() => {
@@ -255,6 +259,53 @@ export function usePlaybackSync() {
     engine.setVolume(volume);
     engine.setPlaybackRate(playbackSpeed);
   }, [volume, playbackSpeed]);
+
+  // Sync loop state
+  useEffect(() => {
+    const engine = getOrCreateEngine();
+    if (!loopMode) {
+      engine.setLoop(false);
+      return;
+    }
+
+    // Build ordered chunks to find indices (mirrors engine's internal ordering)
+    const activeSections = sections.filter(s => (s.status ?? 'active') === 'active');
+    const activeChunks = chunks.filter(c => !c.isDeleted && activeSections.some(s => s.id === c.sectionId));
+
+    const flatOrder = getFlatSectionOrder(activeSections);
+    const sectionPosition = new Map(flatOrder.map((s, i) => [s.id, i]));
+    const orderedChunks = [...activeChunks].sort((a, b) => {
+      const sA = sectionPosition.get(a.sectionId) ?? 0;
+      const sB = sectionPosition.get(b.sectionId) ?? 0;
+      if (sA !== sB) return sA - sB;
+      return a.orderIndex - b.orderIndex;
+    });
+
+    let startIdx = 0;
+    let endIdx = orderedChunks.length - 1;
+
+    if (selectedChunkIds.size > 0) {
+      // Loop selected chunks — find their min/max index in orderedChunks
+      const indices = orderedChunks
+        .map((c, i) => selectedChunkIds.has(c.id) ? i : -1)
+        .filter(i => i >= 0);
+      if (indices.length > 0) {
+        startIdx = Math.min(...indices);
+        endIdx = Math.max(...indices);
+      }
+    } else if (selectedSectionIds.size > 0) {
+      // Loop chunks within selected sections
+      const indices = orderedChunks
+        .map((c, i) => selectedSectionIds.has(c.sectionId) ? i : -1)
+        .filter(i => i >= 0);
+      if (indices.length > 0) {
+        startIdx = Math.min(...indices);
+        endIdx = Math.max(...indices);
+      }
+    }
+
+    engine.setLoop(true, startIdx, endIdx);
+  }, [loopMode, selectedChunkIds, selectedSectionIds, chunks, sections]);
 
   // Preload custom SFX when mappings change (e.g., after applying a template)
   useEffect(() => {

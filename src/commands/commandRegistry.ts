@@ -188,6 +188,10 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     id: 'transport.stop', label: 'Stop', category: 'transport',
     description: 'Stop playback and reset cursor',
   },
+  'transport.toggleLoop': {
+    id: 'transport.toggleLoop', label: 'Toggle Loop', category: 'transport',
+    description: 'Toggle loop playback over selection or full document',
+  },
 
   // --- View ---
   'view.zoomIn': {

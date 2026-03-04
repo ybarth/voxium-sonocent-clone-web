@@ -66,6 +66,7 @@ export const ABLETON_PRESET: KeybindingMap = {
   // Transport
   'transport.togglePlay': 'Space',
   'transport.stop':       'Ctrl+Space',
+  'transport.toggleLoop': 'L',
 
   // View
   'view.zoomIn':           'Ctrl+=',
@@ -144,6 +145,7 @@ export const PROTOOLS_PRESET: KeybindingMap = {
   // Transport
   'transport.togglePlay': 'Space',
   'transport.stop':       'Enter',
+  'transport.toggleLoop': 'L',
 
   // View
   'view.zoomIn':           'Ctrl+=',
@@ -222,6 +224,7 @@ export const LOGIC_CUBASE_PRESET: KeybindingMap = {
   // Transport
   'transport.togglePlay': 'Space',
   'transport.stop':       'Ctrl+Space',
+  'transport.toggleLoop': 'L',
 
   // View
   'view.zoomIn':           'Ctrl+=',
@@ -300,6 +303,7 @@ export const REAPER_PRESET: KeybindingMap = {
   // Transport
   'transport.togglePlay': 'Space',
   'transport.stop':       'Ctrl+Space',
+  'transport.toggleLoop': 'L',
 
   // View
   'view.zoomIn':           'Ctrl+=',

@@ -231,6 +231,8 @@ export interface ProjectSettings {
   defaultAttributes: DefaultAttributes;
   // Sonocent Classic mode: light theme with flat solid colored bars
   classicMode: boolean;
+  // Loop playback over selection or full document
+  loopMode: boolean;
 }
 
 export interface InsertionPoint {
@@ -363,4 +365,5 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   chunkNumberStyle: 'default',
   defaultAttributes: DEFAULT_FORM_ATTRIBUTES,
   classicMode: false,
+  loopMode: false,
 };

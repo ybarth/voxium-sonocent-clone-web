@@ -3,7 +3,7 @@ import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket, Paintbrush,
   ZoomIn, ZoomOut, ChevronDown, Settings, MessageSquare, MessageSquareOff,
-  Undo2, Redo2, Filter, Wand2, Sun, Moon, CheckSquare, Copy, ClipboardPaste,
+  Undo2, Redo2, Filter, Wand2, Sun, Moon, CheckSquare, Copy, ClipboardPaste, Repeat,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useClipboardStore } from '../../stores/clipboardStore';
@@ -34,6 +34,7 @@ export function Toolbar() {
   const filterCount = useProjectStore((s) => s.project.settings.filter.criteria.length);
   const clearFilter = useProjectStore((s) => s.clearFilter);
   const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+  const loopMode = useProjectStore((s) => s.project.settings.loopMode);
   const paintbrushMode = useProjectStore((s) => s.paintbrushMode);
   const setPaintbrushMode = useProjectStore((s) => s.setPaintbrushMode);
   const checkSelectionMode = useProjectStore((s) => s.checkSelectionMode);
@@ -111,7 +112,7 @@ export function Toolbar() {
     }
   };
 
-  const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+  const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
 
   return (
     <div
@@ -242,6 +243,14 @@ export function Toolbar() {
         label="Next Chunk"
         onClick={() => navigateChunk('next')}
         commandId="chunk.next"
+      />
+
+      {/* Loop */}
+      <ToolbarToggle
+        icon={<Repeat size={14} />}
+        label={loopMode ? 'Loop On' : 'Loop Off'}
+        active={loopMode}
+        onClick={() => updateSettings({ loopMode: !loopMode })}
       />
 
       {/* Speed */}

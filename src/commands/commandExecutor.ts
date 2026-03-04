@@ -147,6 +147,9 @@ export function executeCommand(commandId: string): boolean {
     case 'transport.stop':
       transportCallbacks?.stop();
       return true;
+    case 'transport.toggleLoop':
+      state.updateSettings({ loopMode: !project.settings.loopMode });
+      return true;
 
     // --- View ---
     case 'view.zoomIn': {

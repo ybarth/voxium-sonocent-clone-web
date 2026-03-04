@@ -1,9 +1,13 @@
 import type { Chunk, Section } from '../types';
 import { getFlatSectionOrder } from './sectionTree';
+import { timeStretchRegion } from './timeStretch';
 
 /**
  * PlaybackEngine manages Web Audio API playback of chunks.
  * It handles play, pause, stop, seeking, and cursor tracking.
+ *
+ * Speed changes use WSOLA time-stretching to preserve pitch
+ * (no chipmunk effect) at any rate from 0.25x to 5x.
  */
 export class PlaybackEngine {
   private audioContext: AudioContext;
@@ -11,7 +15,7 @@ export class PlaybackEngine {
   private sourceNode: AudioBufferSourceNode | null = null;
   private isPlaying = false;
   private startedAt = 0; // AudioContext time when playback started
-  private pausedAt = 0; // Offset into current chunk when paused
+  private pausedAt = 0; // Offset into current chunk (in *original* time) when paused
 
   private currentChunkIndex = 0;
   private orderedChunks: Chunk[] = [];
@@ -26,6 +30,22 @@ export class PlaybackEngine {
 
   private playbackRate = 1.0;
 
+  // Loop support
+  private loopEnabled = false;
+  private loopStartIndex = 0;
+  private loopEndIndex = -1; // -1 means end of orderedChunks
+
+  /**
+   * The effective rate for the currently playing chunk, derived from
+   * the actual stretched buffer duration. This ensures cursor position
+   * stays perfectly in sync with what the audio hardware is playing,
+   * even if WSOLA rounding causes a tiny duration difference.
+   */
+  private effectiveRate = 1.0;
+
+  /** Cache of WSOLA-stretched buffers keyed by "chunkId:rate" */
+  private stretchedCache = new Map<string, AudioBuffer>();
+
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
     this.gainNode = audioContext.createGain();
@@ -34,6 +54,7 @@ export class PlaybackEngine {
 
   setBuffers(buffers: Map<string, AudioBuffer>) {
     this.audioBuffers = buffers;
+    this.stretchedCache.clear();
   }
 
   setChunks(chunks: Chunk[], sections: Section[]) {
@@ -49,6 +70,7 @@ export class PlaybackEngine {
         if (sA !== sB) return sA - sB;
         return a.orderIndex - b.orderIndex;
       });
+    this.stretchedCache.clear();
   }
 
   setVolume(volume: number) {
@@ -56,12 +78,22 @@ export class PlaybackEngine {
   }
 
   setPlaybackRate(rate: number) {
+    if (rate === this.playbackRate) return;
+
+    const wasPlaying = this.isPlaying;
+
+    if (wasPlaying) {
+      // Capture the current position in original time before stopping
+      const realElapsed = this.audioContext.currentTime - this.startedAt;
+      this.pausedAt += realElapsed * this.effectiveRate;
+      this.stopSource();
+    }
+
     this.playbackRate = rate;
-    if (this.sourceNode) {
-      this.sourceNode.playbackRate.setValueAtTime(
-        rate,
-        this.audioContext.currentTime
-      );
+    this.stretchedCache.clear();
+
+    if (wasPlaying) {
+      this.playCurrentChunk();
     }
   }
 
@@ -83,6 +115,12 @@ export class PlaybackEngine {
 
   onEnd(cb: () => void) {
     this.onPlaybackEnd = cb;
+  }
+
+  setLoop(enabled: boolean, startIdx?: number, endIdx?: number) {
+    this.loopEnabled = enabled;
+    this.loopStartIndex = startIdx ?? 0;
+    this.loopEndIndex = endIdx ?? (this.orderedChunks.length - 1);
   }
 
   seekToChunk(chunkId: string, offsetInChunk = 0) {
@@ -112,15 +150,19 @@ export class PlaybackEngine {
       this.audioContext.resume();
     }
 
+    // If loop is on and we haven't started yet, begin at loopStartIndex
+    if (this.loopEnabled && this.currentChunkIndex === 0 && this.pausedAt === 0) {
+      this.currentChunkIndex = this.loopStartIndex;
+    }
+
     this.playCurrentChunk();
   }
 
   pause() {
     if (!this.isPlaying) return;
 
-    const elapsed =
-      (this.audioContext.currentTime - this.startedAt) * this.playbackRate;
-    this.pausedAt += elapsed;
+    const realElapsed = this.audioContext.currentTime - this.startedAt;
+    this.pausedAt += realElapsed * this.effectiveRate;
     this.stopSource();
   }
 
@@ -163,6 +205,29 @@ export class PlaybackEngine {
     return chunk.endTime - chunk.startTime;
   }
 
+  /**
+   * Get (or create & cache) a WSOLA time-stretched buffer for a chunk.
+   */
+  private getStretchedBuffer(chunk: Chunk): AudioBuffer {
+    const key = `${chunk.id}:${this.playbackRate}`;
+    const cached = this.stretchedCache.get(key);
+    if (cached) return cached;
+
+    const original = this.audioBuffers.get(chunk.audioBufferId);
+    if (!original) throw new Error(`Missing audio buffer ${chunk.audioBufferId}`);
+
+    const stretched = timeStretchRegion(
+      original,
+      chunk.startTime,
+      chunk.endTime,
+      this.playbackRate,
+      this.audioContext,
+    );
+
+    this.stretchedCache.set(key, stretched);
+    return stretched;
+  }
+
   private playCurrentChunk() {
     const chunk = this.orderedChunks[this.currentChunkIndex];
     if (!chunk) {
@@ -171,27 +236,54 @@ export class PlaybackEngine {
       return;
     }
 
-    const buffer = this.audioBuffers.get(chunk.audioBufferId);
-    if (!buffer) return;
-
-    this.sourceNode = this.audioContext.createBufferSource();
-    this.sourceNode.buffer = buffer;
-    this.sourceNode.playbackRate.setValueAtTime(
-      this.playbackRate,
-      this.audioContext.currentTime
-    );
-    this.sourceNode.connect(this.gainNode);
+    const originalBuffer = this.audioBuffers.get(chunk.audioBufferId);
+    if (!originalBuffer) return;
 
     const chunkDuration = chunk.endTime - chunk.startTime;
-    const offset = chunk.startTime + this.pausedAt;
-    const duration = chunkDuration - this.pausedAt;
 
-    if (duration <= 0) {
-      this.advanceToNextChunk();
-      return;
+    this.sourceNode = this.audioContext.createBufferSource();
+    this.sourceNode.connect(this.gainNode);
+
+    if (this.playbackRate !== 1.0) {
+      // ---------- Pitch-preserving time-stretched playback ----------
+      const stretched = this.getStretchedBuffer(chunk);
+      this.sourceNode.buffer = stretched;
+      // Play the pre-stretched buffer at native speed (1x)
+      this.sourceNode.playbackRate.setValueAtTime(1.0, this.audioContext.currentTime);
+
+      // Compute the effective rate from the actual stretched duration so
+      // cursor tracking stays perfectly in sync with hardware playback.
+      this.effectiveRate = stretched.duration > 0
+        ? chunkDuration / stretched.duration
+        : this.playbackRate;
+
+      // Map pausedAt (original time) to position in the stretched buffer
+      const stretchedOffset = this.pausedAt / this.effectiveRate;
+      const stretchedRemaining = stretched.duration - stretchedOffset;
+
+      if (stretchedRemaining <= 0) {
+        this.advanceToNextChunk();
+        return;
+      }
+
+      this.sourceNode.start(0, stretchedOffset, stretchedRemaining);
+    } else {
+      // ---------- Normal 1x playback (no stretching needed) ----------
+      this.effectiveRate = 1.0;
+      this.sourceNode.buffer = originalBuffer;
+      this.sourceNode.playbackRate.setValueAtTime(1.0, this.audioContext.currentTime);
+
+      const offset = chunk.startTime + this.pausedAt;
+      const duration = chunkDuration - this.pausedAt;
+
+      if (duration <= 0) {
+        this.advanceToNextChunk();
+        return;
+      }
+
+      this.sourceNode.start(0, offset, duration);
     }
 
-    this.sourceNode.start(0, offset, duration);
     this.startedAt = this.audioContext.currentTime;
     this.isPlaying = true;
 
@@ -216,11 +308,20 @@ export class PlaybackEngine {
     this.pausedAt = 0;
     this.currentChunkIndex++;
 
-    if (this.currentChunkIndex >= this.orderedChunks.length) {
-      this.stopSource();
-      this.currentChunkIndex = 0;
-      this.onPlaybackEnd?.();
-      return;
+    const loopEnd = this.loopEnabled
+      ? Math.min(this.loopEndIndex, this.orderedChunks.length - 1)
+      : this.orderedChunks.length - 1;
+
+    if (this.currentChunkIndex > loopEnd) {
+      if (this.loopEnabled) {
+        // Wrap to loop start
+        this.currentChunkIndex = this.loopStartIndex;
+      } else {
+        this.stopSource();
+        this.currentChunkIndex = 0;
+        this.onPlaybackEnd?.();
+        return;
+      }
     }
 
     // Fire boundary event when transitioning between chunks
@@ -250,6 +351,13 @@ export class PlaybackEngine {
     }
   }
 
+  /**
+   * Cursor tracking.
+   *
+   * Uses effectiveRate (derived from the actual stretched buffer duration)
+   * so the cursor stays perfectly in sync with hardware playback.
+   * For 1x playback effectiveRate === 1.0 and this reduces to direct time.
+   */
   private startCursorTracking() {
     const track = () => {
       if (!this.isPlaying) return;
@@ -257,9 +365,9 @@ export class PlaybackEngine {
       const chunk = this.orderedChunks[this.currentChunkIndex];
       if (!chunk) return;
 
-      const elapsed =
-        (this.audioContext.currentTime - this.startedAt) * this.playbackRate;
-      const currentOffset = this.pausedAt + elapsed;
+      const realElapsed = this.audioContext.currentTime - this.startedAt;
+      const originalElapsed = realElapsed * this.effectiveRate;
+      const currentOffset = this.pausedAt + originalElapsed;
       const chunkDuration = chunk.endTime - chunk.startTime;
       const position = Math.min(currentOffset / chunkDuration, 1);
       const globalTime = chunk.startTime + currentOffset;
@@ -273,5 +381,6 @@ export class PlaybackEngine {
   destroy() {
     this.stopSource();
     this.gainNode.disconnect();
+    this.stretchedCache.clear();
   }
 }
