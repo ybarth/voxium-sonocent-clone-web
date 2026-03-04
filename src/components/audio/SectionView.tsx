@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronRight, ChevronDown, ArrowUp, ArrowDown, MoreHorizontal, GripVertical,
+  ChevronLeft,
 } from 'lucide-react';
 import type { Section, Chunk, InsertionPoint, ChunkStyle } from '../../types';
 import type { SectionScheme } from '../../types/scheme';
@@ -416,6 +417,7 @@ export function SectionView({
                 {selectedSectionCount} sections &middot; Shift+M to merge
               </span>
             )}
+            <ConfigIndicator sectionId={section.id} classicMode={classicMode} />
             {chunks.length} chunk{chunks.length !== 1 ? 's' : ''}
             {selectedCount > 0 && (
               <span style={{ color: '#3B82F6' }}>
@@ -878,5 +880,49 @@ function InsertionWrapper({
       {showBefore && <InsertionCursor />}
       {children}
     </>
+  );
+}
+
+// ─── Config Indicator ────────────────────────────────────────────────────
+
+function ConfigIndicator({ sectionId, classicMode }: { sectionId: string; classicMode: boolean }) {
+  const configState = useProjectStore((s) => s.project.sectionConfigs[sectionId]);
+  const cycleConfiguration = useProjectStore((s) => s.cycleConfiguration);
+
+  if (!configState) return null;
+
+  const version = configState.versions[configState.activeVersionIndex];
+  if (!version || version.configurations.length <= 1) return null;
+
+  const configIdx = version.activeConfigIndex + 1;
+  const total = version.configurations.length;
+
+  const btnStyle: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', background: 'none', border: 'none',
+    color: classicMode ? '#606060' : '#808090', cursor: 'pointer', padding: '0 1px',
+  };
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '1px',
+        padding: '0 4px', borderRadius: '3px',
+        backgroundColor: configState.previewConfig
+          ? 'rgba(245, 158, 11, 0.15)'
+          : 'rgba(59, 130, 246, 0.1)',
+        fontSize: '10px',
+        color: configState.previewConfig ? '#f59e0b' : '#3B82F6',
+      }}
+    >
+      <button onClick={(e) => { e.stopPropagation(); cycleConfiguration(sectionId, -1); }} style={btnStyle} title="Previous config ([)">
+        <ChevronLeft size={10} />
+      </button>
+      <span>
+        {configState.previewConfig ? 'Preview' : `${configIdx}/${total}`}
+      </span>
+      <button onClick={(e) => { e.stopPropagation(); cycleConfiguration(sectionId, 1); }} style={btnStyle} title="Next config (])">
+        <ChevronRight size={10} />
+      </button>
+    </span>
   );
 }

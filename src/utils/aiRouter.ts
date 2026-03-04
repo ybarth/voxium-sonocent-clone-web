@@ -82,6 +82,18 @@ const DEFAULT_RULES: RoutingRule[] = [
     fallbackProvider: 'openai', fallbackModel: 'gpt-4o-mini',
     requiredCapabilities: ['reasoning'],
   },
+  {
+    taskCategory: 'transcription',
+    primaryProvider: 'openai', primaryModel: 'whisper-1',
+    fallbackProvider: 'gemini', fallbackModel: 'gemini-2.0-flash',
+    requiredCapabilities: [],
+  },
+  {
+    taskCategory: 'division-suggestion',
+    primaryProvider: 'claude', primaryModel: 'claude-haiku-4-5-20251001',
+    fallbackProvider: 'openai', fallbackModel: 'gpt-4o-mini',
+    requiredCapabilities: ['reasoning'],
+  },
 ];
 
 // ─── Router Singleton ───────────────────────────────────────────────────────

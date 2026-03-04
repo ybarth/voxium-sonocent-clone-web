@@ -31,6 +31,12 @@ const MODELS: ModelDefinition[] = [
     maxTokens: 8191, costPer1kInput: 0.00002, costPer1kOutput: 0,
     supportsVision: false, supportsJson: false,
   },
+  {
+    id: 'whisper-1', provider: 'openai', displayName: 'Whisper',
+    capabilities: ['fast'],
+    maxTokens: 0, costPer1kInput: 0, costPer1kOutput: 0,
+    supportsVision: false, supportsJson: false,
+  },
 ];
 
 export class OpenAIProvider implements AIProvider {

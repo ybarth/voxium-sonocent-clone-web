@@ -9,6 +9,8 @@ import {
 import { AudioPane } from '../audio/AudioPane';
 import { PlaceholderPane } from './PlaceholderPane';
 import { PaneWrapper } from './PaneWrapper';
+import { TextPane } from '../text/TextPane';
+import { ConfigurationPanel } from '../configuration/ConfigurationPanel';
 import { useProjectStore } from '../../stores/projectStore';
 import { useLayoutStore } from '../../stores/layoutStore';
 import { applyPreset } from '../../constants/layoutPresets';
@@ -29,11 +31,7 @@ function AudioPanel(_props: IDockviewPanelProps) {
 function TextPanel(_props: IDockviewPanelProps) {
   return (
     <PaneWrapper paneId="text">
-      <PlaceholderPane
-        title="Text Pane"
-        description="Linked transcript with bidirectional Audio ↔ Text sync"
-        icon="📝"
-      />
+      <TextPane />
     </PaneWrapper>
   );
 }
@@ -59,6 +57,14 @@ function FilePanel(_props: IDockviewPanelProps) {
         icon="📄"
       />
     </PaneWrapper>
+  );
+}
+
+function ConfigPanel(_props: IDockviewPanelProps) {
+  return (
+    <div style={{ height: '100%', overflow: 'auto', backgroundColor: '#0f0f1a' }}>
+      <ConfigurationPanel />
+    </div>
   );
 }
 
@@ -110,6 +116,7 @@ export function DockviewLayout() {
       text: TextPanel,
       annotations: AnnotationsPanel,
       file: FilePanel,
+      config: ConfigPanel,
     }),
     []
   );

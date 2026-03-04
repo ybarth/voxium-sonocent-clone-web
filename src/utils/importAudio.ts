@@ -66,6 +66,9 @@ export async function importAudioFile(file: File, options?: ImportAudioOptions):
       });
 
       useProjectStore.getState().addChunks(newChunks);
+
+      // Auto-create configuration state from the imported audio
+      useProjectStore.getState().initSectionConfig(sectionId);
     }
 
     return sectionId;

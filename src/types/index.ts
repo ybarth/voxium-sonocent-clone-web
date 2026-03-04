@@ -5,6 +5,9 @@
 import type { Scheme, DefaultAttributes, SectionScheme, ProjectScheme } from './scheme';
 import { DEFAULT_FORM_ATTRIBUTES } from './scheme';
 import type { ClipboardItem } from './clipboard';
+import type { TranscriptionState } from './transcription';
+import { DEFAULT_TRANSCRIPTION_STATE } from './transcription';
+import type { SectionConfigState, DivisionPreset } from './configuration';
 
 // ─── Texture types ───────────────────────────────────────────────────────────
 
@@ -156,6 +159,11 @@ export interface Project {
   projectScheme: ProjectScheme | null;    // null = independent mode
   projectSchemes: ProjectScheme[];
   tagLibrary: string[];      // Phase 2: all available tags
+  // Phase 5: Transcription
+  transcription: TranscriptionState;
+  // Phase 6: Configurations
+  sectionConfigs: Record<string, SectionConfigState>;
+  divisionPresets: DivisionPreset[];
   undoStack: UndoAction[];
   redoStack: UndoAction[];
 }
@@ -282,7 +290,15 @@ export type UndoActionType =
   | 'change-project-scheme'
   // Phase 2: Tags
   | 'tag-chunks'
-  | 'tag-sections';
+  | 'tag-sections'
+  // Phase 5: Transcription
+  | 'transcribe'
+  | 'edit-transcription'
+  | 'resolve-clarification'
+  // Phase 6: Configurations
+  | 'apply-configuration'
+  | 'switch-version'
+  | 'switch-configuration';
 
 export interface UndoAction {
   type: UndoActionType;
@@ -291,6 +307,7 @@ export interface UndoAction {
     chunks: Chunk[];
     sections: Section[];
     clipboardItems?: ClipboardItem[];
+    sectionConfigs?: Record<string, SectionConfigState>;
   };
 }
 

@@ -12,7 +12,8 @@ export type CommandCategory =
   | 'history'
   | 'color'
   | 'form'
-  | 'clipboard';
+  | 'clipboard'
+  | 'configuration';
 
 export interface CommandDefinition {
   id: string;
@@ -36,6 +37,7 @@ export const COMMAND_CATEGORIES: { id: CommandCategory; label: string }[] = [
   { id: 'color', label: 'Colors' },
   { id: 'form', label: 'Forms & Schemes' },
   { id: 'clipboard', label: 'Clipboard' },
+  { id: 'configuration', label: 'Configuration' },
 ];
 
 export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
@@ -335,6 +337,24 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
   'selection.uncheckAll': {
     id: 'selection.uncheckAll', label: 'Uncheck All', category: 'selection',
     description: 'Remove all checkmarks', audioPaneOnly: true,
+  },
+
+  // --- Configuration ---
+  'config.prevConfig': {
+    id: 'config.prevConfig', label: 'Previous Configuration', category: 'configuration',
+    description: 'Switch to the previous division configuration', audioPaneOnly: true,
+  },
+  'config.nextConfig': {
+    id: 'config.nextConfig', label: 'Next Configuration', category: 'configuration',
+    description: 'Switch to the next division configuration', audioPaneOnly: true,
+  },
+  'config.prevVersion': {
+    id: 'config.prevVersion', label: 'Previous Version', category: 'configuration',
+    description: 'Switch to the previous audio version', audioPaneOnly: true,
+  },
+  'config.nextVersion': {
+    id: 'config.nextVersion', label: 'Next Version', category: 'configuration',
+    description: 'Switch to the next audio version', audioPaneOnly: true,
   },
 };
 

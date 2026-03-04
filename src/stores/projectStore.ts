@@ -7,13 +7,33 @@ import type {
   ColorKeyTemplate, ColorKeyEntry,
 } from '../types';
 import { DEFAULT_COLORS, DEFAULT_SETTINGS, DEFAULT_TTS_CONFIG } from '../types';
+import type {
+  TranscriptionState, TranscribedWord, WordChunkMapping, Speaker,
+  TranscriptionJob, TranscriptionJobStatus, TranscriptionScope,
+  EditingTierConfig, TranscriptionSettings, ClarificationQuery,
+  TextViewMode, HighlightGranularity,
+} from '../types/transcription';
+import { DEFAULT_TRANSCRIPTION_STATE } from '../types/transcription';
 import type { Scheme, Form, DefaultAttributes, SectionScheme, SectionForm, ProjectScheme } from '../types/scheme';
 import { STANDARD_SCHEME, ALL_BUILTIN_SCHEMES } from '../constants/schemes';
 import { STANDARD_SECTION_SCHEME, ALL_BUILTIN_SECTION_SCHEMES } from '../constants/sectionSchemes';
 import { STANDARD_PROJECT_SCHEME, ALL_BUILTIN_PROJECT_SCHEMES } from '../constants/projectSchemes';
 import { getFlatSectionOrder } from '../utils/sectionTree';
+import {
+  remapWordsAfterChunkSplit, remapWordsAfterChunkMerge, removeMappingsForChunks,
+} from '../utils/wordChunkMapper';
 import { BUILTIN_TEMPLATES } from '../constants/templates';
 import { useClipboardStore } from './clipboardStore';
+import type {
+  SectionConfigState, SectionVersion, Configuration,
+  DivisionPreset, DivisionCriterion, BoundaryPoint, AIDivisionSuggestion,
+} from '../types/configuration';
+import { ALL_BUILTIN_PRESETS, PRESET_SILENCE_DETECTION } from '../constants/divisionPresets';
+import {
+  chunksFromBoundaries, remapWordsForSection, mergeBoundaries,
+  computeSilenceBoundaries, computeDurationBoundaries, computeWordBoundaries,
+  createConfiguration, boundariesFromChunks, computeBoundaries,
+} from '../utils/divisionEngine';
 
 // --- Cursor model ---
 // The cursor is a precise position: which chunk (or null if between/outside)
@@ -281,6 +301,46 @@ interface ProjectStore {
   // Phase 2.5: Drag-and-Drop Chunk Reorder
   moveChunksToPosition: (chunkIds: string[], targetSectionId: string, targetOrderIndex: number) => void;
 
+  // Phase 5: Transcription
+  setTranscriptionWords: (words: TranscribedWord[]) => void;
+  addTranscriptionWords: (words: TranscribedWord[]) => void;
+  updateWord: (wordId: string, updates: Partial<TranscribedWord>) => void;
+  deleteWords: (wordIds: string[]) => void;
+  setWordChunkMappings: (mappings: WordChunkMapping[]) => void;
+  addWordChunkMappings: (mappings: WordChunkMapping[]) => void;
+  addSpeaker: (speaker: Speaker) => void;
+  updateSpeaker: (id: string, updates: Partial<Speaker>) => void;
+  startTranscriptionJob: (job: TranscriptionJob) => void;
+  updateJobStatus: (jobId: string, status: TranscriptionJobStatus, updates?: Partial<TranscriptionJob>) => void;
+  cancelJob: (jobId: string) => void;
+  updateTranscriptionSettings: (updates: Partial<TranscriptionSettings>) => void;
+  updateEditingConfig: (updates: Partial<EditingTierConfig>) => void;
+  setClarifications: (queries: ClarificationQuery[]) => void;
+  resolveClarification: (queryId: string, resolvedText: string) => void;
+  dismissClarification: (queryId: string) => void;
+  setTextViewMode: (mode: TextViewMode) => void;
+  setHighlightGranularity: (granularities: HighlightGranularity[]) => void;
+  markChunksStale: (chunkIds: string[]) => void;
+  clearStaleChunks: (chunkIds: string[]) => void;
+
+  // Phase 6: Configuration System
+  initSectionConfig: (sectionId: string) => void;
+  addVersion: (sectionId: string, audioRanges: { audioBufferId: string; startTime: number; endTime: number }[], source: 'recording' | 'import' | 'manual') => void;
+  addConfiguration: (sectionId: string, versionId: string, config: Configuration) => void;
+  switchConfiguration: (sectionId: string, configIndex: number) => void;
+  switchVersion: (sectionId: string, versionIndex: number) => void;
+  cycleConfiguration: (sectionId: string, direction: 1 | -1) => void;
+  deleteConfiguration: (sectionId: string, versionId: string, configId: string) => void;
+  renameConfiguration: (sectionId: string, versionId: string, configId: string, name: string) => void;
+  setPreviewConfig: (sectionId: string, config: Configuration | null) => void;
+  commitPreview: (sectionId: string) => void;
+  applyDivisionPreset: (sectionId: string, presetId: string) => void;
+  applyCustomDivision: (sectionId: string, criteria: DivisionCriterion[]) => void;
+  applyWordPerChunk: (sectionId: string) => void;
+  addDivisionPreset: (preset: DivisionPreset) => void;
+  updateDivisionPreset: (id: string, updates: Partial<DivisionPreset>) => void;
+  deleteDivisionPreset: (id: string) => void;
+
   pushUndo: (type: UndoAction['type'], clipboardSnapshot?: import('../types/clipboard').ClipboardItem[]) => void;
   undo: () => void;
   redo: () => void;
@@ -339,6 +399,9 @@ const initialProject: Project = {
   projectScheme: STANDARD_PROJECT_SCHEME,
   projectSchemes: [STANDARD_PROJECT_SCHEME],
   tagLibrary: [],
+  transcription: { ...DEFAULT_TRANSCRIPTION_STATE },
+  sectionConfigs: {},
+  divisionPresets: [...ALL_BUILTIN_PRESETS],
   undoStack: [],
   redoStack: [],
 };
@@ -446,16 +509,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     })),
 
   replaceLiveChunks: (liveAudioBufferId, newChunks) =>
-    set((s) => ({
-      project: {
-        ...s.project,
-        chunks: [
-          ...s.project.chunks.filter((c) => c.audioBufferId !== liveAudioBufferId),
-          ...newChunks,
-        ],
-        updatedAt: new Date(),
-      },
-    })),
+    set((s) => {
+      // Detect which existing chunks are being replaced
+      const replacedChunkIds = s.project.chunks
+        .filter((c) => c.audioBufferId === liveAudioBufferId)
+        .map((c) => c.id);
+
+      // Check if any of those had transcription data
+      const transcribedChunkIds = new Set(s.project.transcription.wordChunkMappings.map(m => m.chunkId));
+      const staleIds = replacedChunkIds.filter(id => transcribedChunkIds.has(id));
+
+      const existingStale = new Set(s.project.transcription.staleChunkIds);
+      staleIds.forEach(id => existingStale.add(id));
+
+      return {
+        project: {
+          ...s.project,
+          chunks: [
+            ...s.project.chunks.filter((c) => c.audioBufferId !== liveAudioBufferId),
+            ...newChunks,
+          ],
+          transcription: {
+            ...s.project.transcription,
+            staleChunkIds: staleIds.length > 0 ? Array.from(existingStale) : s.project.transcription.staleChunkIds,
+          },
+          updatedAt: new Date(),
+        },
+      };
+    }),
 
   updateLiveRecording: (liveAudioBufferId, newChunks, recordingHead) =>
     set((s) => ({
@@ -483,17 +564,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   deleteChunks: (ids) => {
     get().pushUndo('delete');
-    set((s) => ({
-      project: {
-        ...s.project,
-        chunks: s.project.chunks.map((c) =>
-          ids.includes(c.id) ? { ...c, isDeleted: true } : c
-        ),
-        updatedAt: new Date(),
-      },
-      selection: { ...s.selection, selectedChunkIds: new Set(), anchorChunkId: null },
-      playback: { ...s.playback, insertionPoint: null },
-    }));
+    set((s) => {
+      const updatedMappings = removeMappingsForChunks(ids, s.project.transcription.wordChunkMappings);
+      return {
+        project: {
+          ...s.project,
+          chunks: s.project.chunks.map((c) =>
+            ids.includes(c.id) ? { ...c, isDeleted: true } : c
+          ),
+          transcription: { ...s.project.transcription, wordChunkMappings: updatedMappings },
+          updatedAt: new Date(),
+        },
+        selection: { ...s.selection, selectedChunkIds: new Set(), anchorChunkId: null },
+        playback: { ...s.playback, insertionPoint: null },
+      };
+    });
   },
 
   colorChunks: (ids, color) => {
@@ -556,8 +641,46 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         arr.forEach((c, i) => { c.orderIndex = i; });
       }
 
+      // Update word-chunk mappings for the split
+      const updatedMappings = remapWordsAfterChunkSplit(
+        orig.id,
+        [chunk1, chunk2],
+        s.project.transcription.wordChunkMappings,
+        orig,
+      );
+
+      // Sync split boundary to active configuration
+      const sectionId = orig.sectionId;
+      const cs = s.project.sectionConfigs[sectionId];
+      let updatedSectionConfigs = s.project.sectionConfigs;
+      if (cs) {
+        const version = cs.versions[cs.activeVersionIndex];
+        if (version) {
+          const activeConfig = version.configurations[version.activeConfigIndex];
+          if (activeConfig) {
+            const newBoundary: BoundaryPoint = { time: absTime, source: 'manual', confidence: 1.0 };
+            const updatedConfig = {
+              ...activeConfig,
+              boundaries: [...activeConfig.boundaries, newBoundary].sort((a, b) => a.time - b.time),
+            };
+            const updatedVersions = cs.versions.map((v, vi) =>
+              vi === cs.activeVersionIndex
+                ? { ...v, configurations: v.configurations.map((c, ci) => ci === v.activeConfigIndex ? updatedConfig : c) }
+                : v,
+            );
+            updatedSectionConfigs = { ...s.project.sectionConfigs, [sectionId]: { ...cs, versions: updatedVersions } };
+          }
+        }
+      }
+
       return {
-        project: { ...s.project, chunks: newChunks, updatedAt: new Date() },
+        project: {
+          ...s.project,
+          chunks: newChunks,
+          transcription: { ...s.project.transcription, wordChunkMappings: updatedMappings },
+          sectionConfigs: updatedSectionConfigs,
+          updatedAt: new Date(),
+        },
         playback: {
           ...s.playback,
           currentChunkId: chunk2.id,
@@ -605,8 +728,47 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         .filter((c) => !ids.includes(c.id))
         .concat([merged]);
 
+      // Update word-chunk mappings for the merge
+      const updatedMappings = remapWordsAfterChunkMerge(
+        ids,
+        merged.id,
+        s.project.transcription.wordChunkMappings,
+        toMerge,
+      );
+
+      // Sync: remove boundaries between merged range from active configuration
+      const mergeSectionId = toMerge[0].sectionId;
+      const cs = s.project.sectionConfigs[mergeSectionId];
+      let updatedSectionConfigs = s.project.sectionConfigs;
+      if (cs) {
+        const version = cs.versions[cs.activeVersionIndex];
+        if (version) {
+          const activeConfig = version.configurations[version.activeConfigIndex];
+          if (activeConfig) {
+            const mergeStart = merged.startTime;
+            const mergeEnd = merged.endTime;
+            const filteredBoundaries = activeConfig.boundaries.filter(
+              b => b.time <= mergeStart || b.time >= mergeEnd,
+            );
+            const updatedConfig = { ...activeConfig, boundaries: filteredBoundaries };
+            const updatedVersions = cs.versions.map((v, vi) =>
+              vi === cs.activeVersionIndex
+                ? { ...v, configurations: v.configurations.map((c, ci) => ci === v.activeConfigIndex ? updatedConfig : c) }
+                : v,
+            );
+            updatedSectionConfigs = { ...s.project.sectionConfigs, [mergeSectionId]: { ...cs, versions: updatedVersions } };
+          }
+        }
+      }
+
       return {
-        project: { ...s.project, chunks: newChunks, updatedAt: new Date() },
+        project: {
+          ...s.project,
+          chunks: newChunks,
+          transcription: { ...s.project.transcription, wordChunkMappings: updatedMappings },
+          sectionConfigs: updatedSectionConfigs,
+          updatedAt: new Date(),
+        },
         selection: { ...s.selection, selectedChunkIds: new Set([merged.id]), anchorChunkId: merged.id },
         playback: { ...s.playback, insertionPoint: null },
       };
@@ -1740,25 +1902,269 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }));
   },
 
-  pushUndo: (type, clipboardSnapshot?) =>
+  // ── Phase 5: Transcription actions ──────────────────────────────────────────
+
+  setTranscriptionWords: (words) =>
     set((s) => ({
       project: {
         ...s.project,
-        undoStack: [
-          ...s.project.undoStack.slice(-199),
-          {
-            type,
-            timestamp: Date.now(),
-            previousState: {
-              chunks: JSON.parse(JSON.stringify(s.project.chunks)),
-              sections: JSON.parse(JSON.stringify(s.project.sections)),
-              ...(clipboardSnapshot ? { clipboardItems: clipboardSnapshot } : {}),
-            },
-          },
-        ],
-        redoStack: [],
+        transcription: { ...s.project.transcription, words },
+        updatedAt: new Date(),
       },
     })),
+
+  addTranscriptionWords: (words) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          words: [...s.project.transcription.words, ...words],
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateWord: (wordId, updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          words: s.project.transcription.words.map(w =>
+            w.id === wordId ? { ...w, ...updates } : w
+          ),
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  deleteWords: (wordIds) => {
+    const idSet = new Set(wordIds);
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          words: s.project.transcription.words.filter(w => !idSet.has(w.id)),
+          wordChunkMappings: s.project.transcription.wordChunkMappings.filter(m => !idSet.has(m.wordId)),
+        },
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  setWordChunkMappings: (mappings) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: { ...s.project.transcription, wordChunkMappings: mappings },
+        updatedAt: new Date(),
+      },
+    })),
+
+  addWordChunkMappings: (mappings) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          wordChunkMappings: [...s.project.transcription.wordChunkMappings, ...mappings],
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  addSpeaker: (speaker) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          speakers: [...s.project.transcription.speakers, speaker],
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateSpeaker: (id, updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          speakers: s.project.transcription.speakers.map(sp =>
+            sp.id === id ? { ...sp, ...updates } : sp
+          ),
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  startTranscriptionJob: (job) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          jobs: [...s.project.transcription.jobs, job],
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateJobStatus: (jobId, status, updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          jobs: s.project.transcription.jobs.map(j =>
+            j.id === jobId ? { ...j, status, ...updates } : j
+          ),
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  cancelJob: (jobId) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          jobs: s.project.transcription.jobs.map(j =>
+            j.id === jobId ? { ...j, status: 'cancelled' as const, completedAt: Date.now() } : j
+          ),
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateTranscriptionSettings: (updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          settings: { ...s.project.transcription.settings, ...updates },
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateEditingConfig: (updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          editingConfig: { ...s.project.transcription.editingConfig, ...updates },
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  setClarifications: (queries) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: { ...s.project.transcription, clarifications: queries },
+        updatedAt: new Date(),
+      },
+    })),
+
+  resolveClarification: (queryId, resolvedText) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          clarifications: s.project.transcription.clarifications.map(q =>
+            q.id === queryId ? { ...q, resolved: true, resolvedText } : q
+          ),
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  dismissClarification: (queryId) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: {
+          ...s.project.transcription,
+          clarifications: s.project.transcription.clarifications.filter(q => q.id !== queryId),
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  setTextViewMode: (mode) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: { ...s.project.transcription, viewMode: mode },
+      },
+    })),
+
+  setHighlightGranularity: (granularities) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        transcription: { ...s.project.transcription, highlightGranularities: granularities },
+      },
+    })),
+
+  markChunksStale: (chunkIds) =>
+    set((s) => {
+      const existing = new Set(s.project.transcription.staleChunkIds);
+      chunkIds.forEach(id => existing.add(id));
+      return {
+        project: {
+          ...s.project,
+          transcription: { ...s.project.transcription, staleChunkIds: Array.from(existing) },
+        },
+      };
+    }),
+
+  clearStaleChunks: (chunkIds) =>
+    set((s) => {
+      const toRemove = new Set(chunkIds);
+      return {
+        project: {
+          ...s.project,
+          transcription: {
+            ...s.project.transcription,
+            staleChunkIds: s.project.transcription.staleChunkIds.filter(id => !toRemove.has(id)),
+          },
+        },
+      };
+    }),
+
+  pushUndo: (type, clipboardSnapshot?) =>
+    set((s) => {
+      const isConfigAction = type === 'apply-configuration' || type === 'switch-version' || type === 'switch-configuration';
+      return {
+        project: {
+          ...s.project,
+          undoStack: [
+            ...s.project.undoStack.slice(-199),
+            {
+              type,
+              timestamp: Date.now(),
+              previousState: {
+                chunks: JSON.parse(JSON.stringify(s.project.chunks)),
+                sections: JSON.parse(JSON.stringify(s.project.sections)),
+                ...(clipboardSnapshot ? { clipboardItems: clipboardSnapshot } : {}),
+                ...(isConfigAction ? { sectionConfigs: JSON.parse(JSON.stringify(s.project.sectionConfigs)) } : {}),
+              },
+            },
+          ],
+          redoStack: [],
+        },
+      };
+    }),
 
   undo: () => {
     const undoState = get();
@@ -1778,6 +2184,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ...s.project,
         chunks: action.previousState.chunks,
         sections: action.previousState.sections,
+        ...(action.previousState.sectionConfigs ? { sectionConfigs: action.previousState.sectionConfigs } : {}),
         undoStack: stack.slice(0, -1),
         redoStack: [
           ...s.project.redoStack,
@@ -1788,6 +2195,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
               chunks: JSON.parse(JSON.stringify(s.project.chunks)),
               sections: JSON.parse(JSON.stringify(s.project.sections)),
               ...(currentClipboardSnapshot ? { clipboardItems: currentClipboardSnapshot } : {}),
+              ...(action.previousState.sectionConfigs ? { sectionConfigs: JSON.parse(JSON.stringify(s.project.sectionConfigs)) } : {}),
             },
           },
         ],
@@ -1815,6 +2223,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ...s.project,
         chunks: action.previousState.chunks,
         sections: action.previousState.sections,
+        ...(action.previousState.sectionConfigs ? { sectionConfigs: action.previousState.sectionConfigs } : {}),
         redoStack: stack.slice(0, -1),
         undoStack: [
           ...s.project.undoStack,
@@ -1825,6 +2234,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
               chunks: JSON.parse(JSON.stringify(s.project.chunks)),
               sections: JSON.parse(JSON.stringify(s.project.sections)),
               ...(currentClipboardSnapshot ? { clipboardItems: currentClipboardSnapshot } : {}),
+              ...(action.previousState.sectionConfigs ? { sectionConfigs: JSON.parse(JSON.stringify(s.project.sectionConfigs)) } : {}),
             },
           },
         ],
@@ -3407,7 +3817,464 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       };
     });
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 6: Configuration System
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  initSectionConfig: (sectionId) => {
+    const { project } = get();
+    if (project.sectionConfigs[sectionId]) return;
+
+    // Build initial version from existing chunks
+    const sectionChunks = project.chunks
+      .filter(c => c.sectionId === sectionId && !c.isDeleted)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+
+    if (sectionChunks.length === 0) return;
+
+    const audioBufferId = sectionChunks[0].audioBufferId;
+    const startTime = Math.min(...sectionChunks.map(c => c.startTime));
+    const endTime = Math.max(...sectionChunks.map(c => c.endTime));
+
+    const boundaries = boundariesFromChunks(project.chunks, sectionId);
+    const initialConfig = createConfiguration(
+      'Initial',
+      boundaries,
+      PRESET_SILENCE_DETECTION.criteria,
+      'auto',
+      PRESET_SILENCE_DETECTION.id,
+    );
+
+    const version: SectionVersion = {
+      id: uuid(),
+      sectionId,
+      audioRanges: [{ audioBufferId, startTime, endTime }],
+      configurations: [initialConfig],
+      activeConfigIndex: 0,
+      createdAt: Date.now(),
+      source: 'import',
+    };
+
+    const configState: SectionConfigState = {
+      sectionId,
+      versions: [version],
+      activeVersionIndex: 0,
+      previewConfig: null,
+    };
+
+    set((s) => ({
+      project: {
+        ...s.project,
+        sectionConfigs: { ...s.project.sectionConfigs, [sectionId]: configState },
+      },
+    }));
+  },
+
+  addVersion: (sectionId, audioRanges, source) => {
+    const { project } = get();
+    const configState = project.sectionConfigs[sectionId];
+    if (!configState) {
+      get().initSectionConfig(sectionId);
+      return;
+    }
+
+    const version: SectionVersion = {
+      id: uuid(),
+      sectionId,
+      audioRanges,
+      configurations: [],
+      activeConfigIndex: -1,
+      createdAt: Date.now(),
+      source,
+    };
+
+    set((s) => {
+      const cs = s.project.sectionConfigs[sectionId];
+      if (!cs) return s;
+      return {
+        project: {
+          ...s.project,
+          sectionConfigs: {
+            ...s.project.sectionConfigs,
+            [sectionId]: {
+              ...cs,
+              versions: [...cs.versions, version],
+              activeVersionIndex: cs.versions.length,
+            },
+          },
+        },
+      };
+    });
+  },
+
+  addConfiguration: (sectionId, versionId, config) => {
+    set((s) => {
+      const cs = s.project.sectionConfigs[sectionId];
+      if (!cs) return s;
+      const versions = cs.versions.map(v =>
+        v.id === versionId
+          ? { ...v, configurations: [...v.configurations, config], activeConfigIndex: v.configurations.length }
+          : v,
+      );
+      return {
+        project: {
+          ...s.project,
+          sectionConfigs: {
+            ...s.project.sectionConfigs,
+            [sectionId]: { ...cs, versions },
+          },
+        },
+      };
+    });
+  },
+
+  switchConfiguration: (sectionId, configIndex) => {
+    const { project } = get();
+    const cs = project.sectionConfigs[sectionId];
+    if (!cs) return;
+
+    const version = cs.versions[cs.activeVersionIndex];
+    if (!version || configIndex < 0 || configIndex >= version.configurations.length) return;
+    if (configIndex === version.activeConfigIndex) return;
+
+    const config = version.configurations[configIndex];
+    const audioRange = version.audioRanges[0];
+    if (!audioRange) return;
+
+    get().pushUndo('switch-configuration');
+
+    // Find audio buffer for waveform computation
+    const bufRef = project.audioBuffers.find(b => b.id === audioRange.audioBufferId);
+    const channelData = bufRef?.decodedBuffer?.getChannelData(0) ?? null;
+    const sampleRate = bufRef?.decodedBuffer?.sampleRate ?? 44100;
+
+    // Remove old chunks for this section
+    const oldChunkIds = project.chunks
+      .filter(c => c.sectionId === sectionId && !c.isDeleted)
+      .map(c => c.id);
+
+    // Generate new chunks from boundaries
+    const newChunks = chunksFromBoundaries(
+      config.boundaries,
+      audioRange,
+      sectionId,
+      0,
+      channelData,
+      sampleRate,
+      config.chunkOverrides,
+    );
+
+    // Remap word-chunk mappings
+    const updatedMappings = remapWordsForSection(
+      sectionId,
+      newChunks,
+      project.transcription.words,
+      project.transcription.wordChunkMappings,
+      oldChunkIds,
+    );
+
+    set((s) => {
+      const remainingChunks = s.project.chunks.filter(
+        c => c.sectionId !== sectionId || c.isDeleted,
+      );
+      const cs2 = s.project.sectionConfigs[sectionId];
+      if (!cs2) return s;
+
+      const updatedVersions = cs2.versions.map((v, i) =>
+        i === cs2.activeVersionIndex
+          ? { ...v, activeConfigIndex: configIndex }
+          : v,
+      );
+
+      return {
+        project: {
+          ...s.project,
+          chunks: [...remainingChunks, ...newChunks],
+          transcription: {
+            ...s.project.transcription,
+            wordChunkMappings: updatedMappings,
+          },
+          sectionConfigs: {
+            ...s.project.sectionConfigs,
+            [sectionId]: { ...cs2, versions: updatedVersions, previewConfig: null },
+          },
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  switchVersion: (sectionId, versionIndex) => {
+    const { project } = get();
+    const cs = project.sectionConfigs[sectionId];
+    if (!cs || versionIndex < 0 || versionIndex >= cs.versions.length) return;
+    if (versionIndex === cs.activeVersionIndex) return;
+
+    get().pushUndo('switch-version');
+
+    const version = cs.versions[versionIndex];
+    const config = version.configurations[version.activeConfigIndex];
+    const audioRange = version.audioRanges[0];
+    if (!audioRange) return;
+
+    const bufRef = project.audioBuffers.find(b => b.id === audioRange.audioBufferId);
+    const channelData = bufRef?.decodedBuffer?.getChannelData(0) ?? null;
+    const sampleRate = bufRef?.decodedBuffer?.sampleRate ?? 44100;
+
+    const oldChunkIds = project.chunks
+      .filter(c => c.sectionId === sectionId && !c.isDeleted)
+      .map(c => c.id);
+
+    const newChunks = config
+      ? chunksFromBoundaries(config.boundaries, audioRange, sectionId, 0, channelData, sampleRate, config.chunkOverrides)
+      : [];
+
+    const updatedMappings = remapWordsForSection(
+      sectionId, newChunks, project.transcription.words,
+      project.transcription.wordChunkMappings, oldChunkIds,
+    );
+
+    set((s) => {
+      const remainingChunks = s.project.chunks.filter(c => c.sectionId !== sectionId || c.isDeleted);
+      return {
+        project: {
+          ...s.project,
+          chunks: [...remainingChunks, ...newChunks],
+          transcription: { ...s.project.transcription, wordChunkMappings: updatedMappings },
+          sectionConfigs: {
+            ...s.project.sectionConfigs,
+            [sectionId]: { ...s.project.sectionConfigs[sectionId]!, activeVersionIndex: versionIndex, previewConfig: null },
+          },
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  cycleConfiguration: (sectionId, direction) => {
+    const { project } = get();
+    const cs = project.sectionConfigs[sectionId];
+    if (!cs) return;
+    const version = cs.versions[cs.activeVersionIndex];
+    if (!version || version.configurations.length <= 1) return;
+
+    let next = version.activeConfigIndex + direction;
+    if (next < 0) next = version.configurations.length - 1;
+    if (next >= version.configurations.length) next = 0;
+
+    get().switchConfiguration(sectionId, next);
+  },
+
+  deleteConfiguration: (sectionId, versionId, configId) => {
+    set((s) => {
+      const cs = s.project.sectionConfigs[sectionId];
+      if (!cs) return s;
+      const versions = cs.versions.map(v => {
+        if (v.id !== versionId) return v;
+        const filtered = v.configurations.filter(c => c.id !== configId);
+        return {
+          ...v,
+          configurations: filtered,
+          activeConfigIndex: Math.min(v.activeConfigIndex, Math.max(0, filtered.length - 1)),
+        };
+      });
+      return {
+        project: {
+          ...s.project,
+          sectionConfigs: { ...s.project.sectionConfigs, [sectionId]: { ...cs, versions } },
+        },
+      };
+    });
+  },
+
+  renameConfiguration: (sectionId, versionId, configId, name) => {
+    set((s) => {
+      const cs = s.project.sectionConfigs[sectionId];
+      if (!cs) return s;
+      const versions = cs.versions.map(v => {
+        if (v.id !== versionId) return v;
+        return {
+          ...v,
+          configurations: v.configurations.map(c => c.id === configId ? { ...c, name } : c),
+        };
+      });
+      return {
+        project: {
+          ...s.project,
+          sectionConfigs: { ...s.project.sectionConfigs, [sectionId]: { ...cs, versions } },
+        },
+      };
+    });
+  },
+
+  setPreviewConfig: (sectionId, config) => {
+    set((s) => {
+      const cs = s.project.sectionConfigs[sectionId];
+      if (!cs) return s;
+      return {
+        project: {
+          ...s.project,
+          sectionConfigs: {
+            ...s.project.sectionConfigs,
+            [sectionId]: { ...cs, previewConfig: config },
+          },
+        },
+      };
+    });
+  },
+
+  commitPreview: (sectionId) => {
+    const { project } = get();
+    const cs = project.sectionConfigs[sectionId];
+    if (!cs || !cs.previewConfig) return;
+
+    const version = cs.versions[cs.activeVersionIndex];
+    if (!version) return;
+
+    // Add the preview as a new configuration and switch to it
+    get().addConfiguration(sectionId, version.id, cs.previewConfig);
+    // switchConfiguration will be triggered by addConfiguration setting activeConfigIndex
+    const newIndex = version.configurations.length; // it was appended
+    get().switchConfiguration(sectionId, newIndex);
+  },
+
+  applyDivisionPreset: (sectionId, presetId) => {
+    const { project } = get();
+    const preset = project.divisionPresets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    // Ensure config state exists
+    if (!project.sectionConfigs[sectionId]) {
+      get().initSectionConfig(sectionId);
+    }
+
+    const cs = get().project.sectionConfigs[sectionId];
+    if (!cs) return;
+    const version = cs.versions[cs.activeVersionIndex];
+    if (!version) return;
+    const audioRange = version.audioRanges[0];
+    if (!audioRange) return;
+
+    const bufRef = project.audioBuffers.find(b => b.id === audioRange.audioBufferId);
+    const channelData = bufRef?.decodedBuffer?.getChannelData(0) ?? null;
+    const sampleRate = bufRef?.decodedBuffer?.sampleRate ?? 44100;
+    const words = project.transcription.words;
+
+    // Compute boundaries from criteria
+    const allBoundaries: BoundaryPoint[] = [];
+    for (const criterion of preset.criteria) {
+      if (!criterion.enabled) continue;
+      const weighted = computeCriterionBoundaries(
+        criterion, channelData, sampleRate, audioRange, words,
+      ).map(b => ({ ...b, confidence: b.confidence * criterion.weight }));
+      allBoundaries.push(...weighted);
+    }
+
+    const merged = mergeBoundaries(allBoundaries);
+    const config = createConfiguration(preset.name, merged, preset.criteria, 'user', preset.id);
+
+    get().addConfiguration(sectionId, version.id, config);
+    get().switchConfiguration(sectionId, version.configurations.length);
+  },
+
+  applyCustomDivision: (sectionId, criteria) => {
+    const { project } = get();
+    if (!project.sectionConfigs[sectionId]) {
+      get().initSectionConfig(sectionId);
+    }
+
+    const cs = get().project.sectionConfigs[sectionId];
+    if (!cs) return;
+    const version = cs.versions[cs.activeVersionIndex];
+    if (!version) return;
+    const audioRange = version.audioRanges[0];
+    if (!audioRange) return;
+
+    const bufRef = project.audioBuffers.find(b => b.id === audioRange.audioBufferId);
+    const channelData = bufRef?.decodedBuffer?.getChannelData(0) ?? null;
+    const sampleRate = bufRef?.decodedBuffer?.sampleRate ?? 44100;
+    const words = project.transcription.words;
+
+    const allBoundaries: BoundaryPoint[] = [];
+    for (const criterion of criteria) {
+      if (!criterion.enabled) continue;
+      const weighted = computeCriterionBoundaries(
+        criterion, channelData, sampleRate, audioRange, words,
+      ).map(b => ({ ...b, confidence: b.confidence * criterion.weight }));
+      allBoundaries.push(...weighted);
+    }
+
+    const merged = mergeBoundaries(allBoundaries);
+    const config = createConfiguration('Custom', merged, criteria, 'user');
+
+    get().addConfiguration(sectionId, version.id, config);
+    get().switchConfiguration(sectionId, version.configurations.length);
+  },
+
+  applyWordPerChunk: (sectionId) => {
+    const { project } = get();
+    if (!project.sectionConfigs[sectionId]) {
+      get().initSectionConfig(sectionId);
+    }
+
+    const cs = get().project.sectionConfigs[sectionId];
+    if (!cs) return;
+    const version = cs.versions[cs.activeVersionIndex];
+    if (!version) return;
+    const audioRange = version.audioRanges[0];
+    if (!audioRange) return;
+
+    const words = project.transcription.words;
+    const boundaries = computeWordBoundaries(words, audioRange);
+    const config = createConfiguration('One Word Per Chunk', boundaries, [{ type: 'word-level', enabled: true, weight: 1, params: {} }], 'user', 'preset-one-word');
+
+    get().addConfiguration(sectionId, version.id, config);
+    get().switchConfiguration(sectionId, version.configurations.length);
+  },
+
+  addDivisionPreset: (preset) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        divisionPresets: [...s.project.divisionPresets, preset],
+      },
+    }));
+  },
+
+  updateDivisionPreset: (id, updates) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        divisionPresets: s.project.divisionPresets.map(p =>
+          p.id === id ? { ...p, ...updates } : p,
+        ),
+      },
+    }));
+  },
+
+  deleteDivisionPreset: (id) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        divisionPresets: s.project.divisionPresets.filter(p => p.id !== id),
+      },
+    }));
+  },
 }));
+
+// ─── Helper: Compute boundaries for a single criterion ─────────────────────
+
+function computeCriterionBoundaries(
+  criterion: DivisionCriterion,
+  channelData: Float32Array | null,
+  sampleRate: number,
+  audioRange: { audioBufferId: string; startTime: number; endTime: number },
+  words: import('../types/transcription').TranscribedWord[],
+): BoundaryPoint[] {
+  // Delegate to the orchestrator with a single-criterion list
+  return computeBoundaries([criterion], channelData, sampleRate, audioRange, words, 0);
+}
 
 // ─── localStorage helpers for scheme templates ────────────────────────────
 

@@ -288,7 +288,51 @@ export function executeCommand(commandId: string): boolean {
       state.uncheckAll();
       return true;
 
+    // --- Configuration ---
+    case 'config.prevConfig': {
+      const sectionId = getActiveSectionId(state);
+      if (sectionId) state.cycleConfiguration(sectionId, -1);
+      return true;
+    }
+    case 'config.nextConfig': {
+      const sectionId = getActiveSectionId(state);
+      if (sectionId) state.cycleConfiguration(sectionId, 1);
+      return true;
+    }
+    case 'config.prevVersion': {
+      const sectionId = getActiveSectionId(state);
+      if (sectionId) {
+        const cs = project.sectionConfigs[sectionId];
+        if (cs && cs.activeVersionIndex > 0) {
+          state.switchVersion(sectionId, cs.activeVersionIndex - 1);
+        }
+      }
+      return true;
+    }
+    case 'config.nextVersion': {
+      const sectionId = getActiveSectionId(state);
+      if (sectionId) {
+        const cs = project.sectionConfigs[sectionId];
+        if (cs && cs.activeVersionIndex < cs.versions.length - 1) {
+          state.switchVersion(sectionId, cs.activeVersionIndex + 1);
+        }
+      }
+      return true;
+    }
+
     default:
       return false;
   }
+}
+
+/** Get the section ID of the currently focused chunk or first selected section. */
+function getActiveSectionId(state: ReturnType<typeof useProjectStore.getState>): string | null {
+  if (state.selection.selectedSectionIds.size > 0) {
+    return [...state.selection.selectedSectionIds][0];
+  }
+  if (state.playback.currentChunkId) {
+    const chunk = state.project.chunks.find(c => c.id === state.playback.currentChunkId);
+    if (chunk) return chunk.sectionId;
+  }
+  return null;
 }

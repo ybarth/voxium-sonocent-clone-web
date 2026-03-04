@@ -90,6 +90,12 @@ export const ABLETON_PRESET: KeybindingMap = {
   'edit.paste': 'Ctrl+V',
   'clipboard.togglePopup': 'B',
 
+  // Configuration
+  'config.prevConfig': 'BracketLeft',
+  'config.nextConfig': 'BracketRight',
+  'config.prevVersion': 'Shift+BracketLeft',
+  'config.nextVersion': 'Shift+BracketRight',
+
   // Settings
   'app.openSettings': 'Ctrl+,',
 };
@@ -168,6 +174,12 @@ export const PROTOOLS_PRESET: KeybindingMap = {
   'edit.copy': 'Ctrl+C',
   'edit.paste': 'Ctrl+V',
   'clipboard.togglePopup': 'B',
+
+  // Configuration
+  'config.prevConfig': 'BracketLeft',
+  'config.nextConfig': 'BracketRight',
+  'config.prevVersion': 'Shift+BracketLeft',
+  'config.nextVersion': 'Shift+BracketRight',
 
   // Settings
   'app.openSettings': 'Ctrl+,',
@@ -248,6 +260,12 @@ export const LOGIC_CUBASE_PRESET: KeybindingMap = {
   'edit.paste': 'Ctrl+V',
   'clipboard.togglePopup': 'B',
 
+  // Configuration
+  'config.prevConfig': 'BracketLeft',
+  'config.nextConfig': 'BracketRight',
+  'config.prevVersion': 'Shift+BracketLeft',
+  'config.nextVersion': 'Shift+BracketRight',
+
   // Settings
   'app.openSettings': 'Ctrl+,',
 };
@@ -326,6 +344,12 @@ export const REAPER_PRESET: KeybindingMap = {
   'edit.copy': 'Ctrl+C',
   'edit.paste': 'Ctrl+V',
   'clipboard.togglePopup': 'B',
+
+  // Configuration
+  'config.prevConfig': 'BracketLeft',
+  'config.nextConfig': 'BracketRight',
+  'config.prevVersion': 'Shift+BracketLeft',
+  'config.nextVersion': 'Shift+BracketRight',
 
   // Settings
   'app.openSettings': 'Ctrl+,',

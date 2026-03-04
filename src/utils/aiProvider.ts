@@ -14,7 +14,8 @@ export type TaskCategory =
   | 'general-chat'
   | 'transcription'
   | 'tts'
-  | 'voice-cloning';
+  | 'voice-cloning'
+  | 'division-suggestion';
 
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant';

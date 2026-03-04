@@ -18,6 +18,7 @@ import { aiRouter } from '../../utils/aiRouter';
 import type { RoutingRule } from '../../utils/aiRouter';
 import { CouncilPanel } from '../forge/CouncilPanel';
 import { AIUsageDashboard } from './AIUsageDashboard';
+import { TranscriptionSettingsTab } from './TranscriptionSettingsTab';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -32,7 +33,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const getResolvedBindings = useKeybindingStore(s => s.getResolvedBindings);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<CommandCategory>>(new Set());
-  const [activeTab, setActiveTab] = useState<'keybindings' | 'general' | 'ai-routing' | 'ai-usage'>('keybindings');
+  const [activeTab, setActiveTab] = useState<'keybindings' | 'general' | 'ai-routing' | 'ai-usage' | 'transcription'>('keybindings');
 
   const resolved = getResolvedBindings();
   const conflicts = getConflicts();
@@ -149,6 +150,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             label="AI Usage"
             active={activeTab === 'ai-usage'}
             onClick={() => setActiveTab('ai-usage')}
+          />
+          <TabButton
+            label="Transcription"
+            active={activeTab === 'transcription'}
+            onClick={() => setActiveTab('transcription')}
           />
         </div>
 
@@ -280,6 +286,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           )}
           {activeTab === 'ai-usage' && (
             <AIUsageDashboard />
+          )}
+          {activeTab === 'transcription' && (
+            <TranscriptionSettingsTab />
           )}
         </div>
       </div>

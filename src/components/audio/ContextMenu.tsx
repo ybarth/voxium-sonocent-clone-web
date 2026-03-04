@@ -24,6 +24,7 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
   const splitSectionAtChunk = useProjectStore((s) => s.splitSectionAtChunk);
 
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
+  const selectedSectionIds = useProjectStore((s) => s.selection.selectedSectionIds);
   const chunks = useProjectStore((s) => s.project.chunks);
   const cm = useProjectStore((s) => s.project.settings.classicMode);
   const clipboardCut = useProjectStore((s) => s.clipboardCut);
@@ -172,7 +173,23 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
         />
       )}
 
-      {(selectedChunkIds.size > 0 || clipboardMode) && <CtxMenuDivider />}
+      {(selectedChunkIds.size > 0 || hasClipboardItems) && <CtxMenuDivider />}
+
+      {(selectedChunkIds.size > 0 || selectedSectionIds.size > 0) && (
+        <CtxMenuItem
+          label={selectedChunkIds.size > 0
+            ? `Transcribe (${selectedChunkIds.size} chunk${selectedChunkIds.size !== 1 ? 's' : ''})`
+            : `Transcribe (${selectedSectionIds.size} section${selectedSectionIds.size !== 1 ? 's' : ''})`
+          }
+          onClick={() => {
+            const store = useProjectStore.getState();
+            store.setFocusedPane('text');
+            onClose();
+          }}
+        />
+      )}
+
+      <CtxMenuDivider />
 
       <CtxMenuItem label="Import as Section(s) Here" onClick={handleImportAsSections} />
       <CtxMenuItem label="Import as Subsection(s)" onClick={handleImportAsSubsections} />
