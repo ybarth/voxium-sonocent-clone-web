@@ -223,6 +223,8 @@ export function AudioPane() {
     setDropTargetSectionId(null);
   }, [dragSectionId]);
 
+  const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+
   let globalOffset = 0;
 
   return (
@@ -235,10 +237,12 @@ export function AudioPane() {
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
+        backgroundColor: classicMode ? '#f0f1f3' : undefined,
+        transition: 'background-color 0.3s',
       }}
     >
       <TakeBanner />
-      <div style={{ flex: 1, overflow: 'auto', padding: '8px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: classicMode ? '6px' : '8px' }}>
         {orderedSections.map((section) => {
           if (hiddenSectionIds.has(section.id)) return null;
 
@@ -283,9 +287,9 @@ export function AudioPane() {
               alignItems: 'center',
               justifyContent: 'center',
               padding: '60px 20px',
-              color: '#505060',
+              color: classicMode ? '#9ca0a8' : '#505060',
               textAlign: 'center',
-              border: '2px dashed #303040',
+              border: classicMode ? '2px dashed #c0c4cc' : '2px dashed #303040',
               borderRadius: '12px',
               margin: '20px',
             }}

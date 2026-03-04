@@ -69,6 +69,7 @@ export function SectionView({
   const moveSectionDown = useProjectStore((s) => s.moveSectionDown);
   const sectionScheme = useProjectStore((s) => s.project.sectionScheme);
   const allSections = useProjectStore((s) => s.project.sections);
+  const classicMode = useProjectStore((s) => s.project.settings.classicMode);
 
   const canCollapse = hasChildren || chunks.length > 0;
 
@@ -184,7 +185,21 @@ export function SectionView({
   }, [onDragEnd]);
 
   // ─── Resolve section background from form + depth desaturation + parent inheritance ───
-  const resolvedBg = resolveSectionBackground(section, allSections, sectionScheme);
+  const resolvedBg = classicMode ? {} : resolveSectionBackground(section, allSections, sectionScheme);
+
+  // ── Classic mode color constants ──
+  const cHeader = classicMode
+    ? (isSectionSelected ? 'rgba(59, 130, 246, 0.12)' : '#e8e9ec')
+    : (isSectionSelected ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.03)');
+  const cHeaderBorder = classicMode ? '1px solid #d0d3d8' : '1px solid rgba(255,255,255,0.08)';
+  const cGripColor = classicMode ? '#9ca0a8' : '#505060';
+  const cChevronColor = classicMode ? '#606878' : '#808090';
+  const cNameColor = classicMode ? '#2a2a3a' : '#a0a0b0';
+  const cEditBg = classicMode ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+  const cEditBorder = classicMode ? '1px solid #b8bcc4' : '1px solid rgba(255,255,255,0.2)';
+  const cEditColor = classicMode ? '#1a1a2a' : '#e0e0e0';
+  const cMetaColor = classicMode ? '#808898' : '#606070';
+  const cEmptyColor = classicMode ? '#9ca0a8' : '#505060';
 
   return (
     <>
@@ -204,9 +219,11 @@ export function SectionView({
         onDragOver={handleSectionDragOver}
         onDrop={handleDrop}
         style={{
-          marginBottom: '6px',
-          ...resolvedBg,
-          borderRadius: '4px',
+          marginBottom: classicMode ? '2px' : '6px',
+          ...(classicMode
+            ? { backgroundColor: '#ffffff', borderBottom: '1px solid #d0d3d8' }
+            : resolvedBg),
+          borderRadius: classicMode ? '3px' : '4px',
           overflow: 'hidden',
           marginLeft: `${section.depth * 16}px`,
           outline: isSectionSelected ? '2px solid #3B82F6' : 'none',
@@ -224,14 +241,14 @@ export function SectionView({
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            backgroundColor: isSectionSelected ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.03)',
+            borderBottom: cHeaderBorder,
+            backgroundColor: cHeader,
             cursor: 'grab',
           }}
           onDoubleClick={handleDoubleClick}
         >
           {/* Drag handle */}
-          <div style={{ color: '#505060', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+          <div style={{ color: cGripColor, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <GripVertical size={12} />
           </div>
 
@@ -244,7 +261,7 @@ export function SectionView({
                 alignItems: 'center',
                 background: 'none',
                 border: 'none',
-                color: '#808090',
+                color: cChevronColor,
                 cursor: 'pointer',
                 padding: '2px',
                 borderRadius: '3px',
@@ -268,11 +285,11 @@ export function SectionView({
               }}
               onClick={(e) => e.stopPropagation()}
               style={{
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.2)',
+                background: cEditBg,
+                border: cEditBorder,
                 borderRadius: '4px',
                 padding: '2px 8px',
-                color: '#e0e0e0',
+                color: cEditColor,
                 fontSize: '13px',
                 fontWeight: 600,
                 outline: 'none',
@@ -283,7 +300,7 @@ export function SectionView({
               style={{
                 fontSize: '13px',
                 fontWeight: 600,
-                color: '#a0a0b0',
+                color: cNameColor,
                 cursor: 'default',
                 flex: 1,
                 minWidth: 0,
@@ -296,7 +313,7 @@ export function SectionView({
             </span>
           )}
 
-          <span style={{ fontSize: '11px', color: '#606070', marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '11px', color: cMetaColor, marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
             {isSectionSelected && selectedSectionCount >= 2 && (
               <span style={{ color: '#3B82F6', fontSize: '10px' }}>
                 {selectedSectionCount} sections &middot; Shift+M to merge
@@ -313,14 +330,14 @@ export function SectionView({
             <button
               onClick={(e) => { e.stopPropagation(); moveSectionUp(section.id); }}
               title="Move section up"
-              style={iconBtnStyle}
+              style={classicMode ? classicIconBtnStyle : iconBtnStyle}
             >
               <ArrowUp size={12} />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); moveSectionDown(section.id); }}
               title="Move section down"
-              style={iconBtnStyle}
+              style={classicMode ? classicIconBtnStyle : iconBtnStyle}
             >
               <ArrowDown size={12} />
             </button>
@@ -330,7 +347,7 @@ export function SectionView({
               ref={menuBtnRef}
               onClick={handleMenuToggle}
               title="Section options"
-              style={iconBtnStyle}
+              style={classicMode ? classicIconBtnStyle : iconBtnStyle}
             >
               <MoreHorizontal size={14} />
             </button>
@@ -343,7 +360,7 @@ export function SectionView({
             style={{
               padding: '6px 12px',
               fontSize: '11px',
-              color: '#606070',
+              color: cMetaColor,
               fontStyle: 'italic',
             }}
           >
@@ -354,7 +371,7 @@ export function SectionView({
             onClick={handleEmptySpaceClick}
             onContextMenu={handleFlowContextMenu}
             style={{
-              padding: '4px 6px',
+              padding: classicMode ? '3px 4px' : '4px 6px',
               display: 'flex',
               flexWrap: 'wrap',
               alignItems: 'flex-start',
@@ -370,7 +387,7 @@ export function SectionView({
               ) : (
                 <div
                   style={{
-                    color: '#505060',
+                    color: cEmptyColor,
                     fontSize: '12px',
                     fontStyle: 'italic',
                     padding: '20px',
@@ -489,6 +506,17 @@ const iconBtnStyle: React.CSSProperties = {
   borderRadius: '3px',
 };
 
+const classicIconBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  background: 'none',
+  border: 'none',
+  color: '#808898',
+  cursor: 'pointer',
+  padding: '2px',
+  borderRadius: '3px',
+};
+
 function SectionMenu({
   section,
   position,
@@ -502,6 +530,7 @@ function SectionMenu({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const sections = useProjectStore((s) => s.project.sections);
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
   const playback = useProjectStore((s) => s.playback);
   const moveSectionUp = useProjectStore((s) => s.moveSectionUp);
   const moveSectionDown = useProjectStore((s) => s.moveSectionDown);
@@ -569,17 +598,17 @@ function SectionMenu({
         position: 'fixed',
         top,
         left: left - menuWidth,
-        backgroundColor: '#1e1e2e',
-        border: '1px solid #2a2a3e',
+        backgroundColor: cm ? '#ffffff' : '#1e1e2e',
+        border: cm ? '1px solid #d0d3d8' : '1px solid #2a2a3e',
         borderRadius: '6px',
         padding: '4px 0',
         minWidth: `${menuWidth}px`,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+        boxShadow: cm ? '0 4px 16px rgba(0,0,0,0.15)' : '0 4px 16px rgba(0,0,0,0.5)',
         zIndex: 10000,
       }}
     >
-      <MenuItem label="Move Up" onClick={() => { moveSectionUp(section.id); onClose(); }} />
-      <MenuItem label="Move Down" onClick={() => { moveSectionDown(section.id); onClose(); }} />
+      <MenuItem label="Move Up" onClick={() => { moveSectionUp(section.id); onClose(); }} classic={cm} />
+      <MenuItem label="Move Down" onClick={() => { moveSectionDown(section.id); onClose(); }} classic={cm} />
       {onEditStyle && (() => {
         const selIds = Array.from(selectedSectionIds);
         const isMulti = selIds.length >= 2 && selectedSectionIds.has(section.id);
@@ -589,6 +618,7 @@ function SectionMenu({
           return (
             <MenuItem
               label={`Edit Background\u2026 (${selIds.length} sections)`}
+              classic={cm}
               onClick={() => {
                 onEditStyle({ type: 'sections', ids: selIds }, initialStyle, initialColor);
                 onClose();
@@ -599,6 +629,7 @@ function SectionMenu({
         return (
           <MenuItem
             label="Edit Background\u2026"
+            classic={cm}
             onClick={() => {
               onEditStyle({ type: 'section', sectionId: section.id }, initialStyle, initialColor);
               onClose();
@@ -610,12 +641,14 @@ function SectionMenu({
       {canNest && (
         <MenuItem
           label="Make Subsection"
+          classic={cm}
           onClick={() => { nestSection(section.id, prevSibling!.id); onClose(); }}
         />
       )}
       {canUnnest && (
         <MenuItem
           label="Promote to Section"
+          classic={cm}
           onClick={() => { unnestSection(section.id); onClose(); }}
         />
       )}
@@ -623,41 +656,48 @@ function SectionMenu({
       {canSplit && cursorChunk && (
         <MenuItem
           label="Split Section Here"
+          classic={cm}
           onClick={() => { splitSectionAtChunk(section.id, cursorChunk.orderIndex); onClose(); }}
         />
       )}
       {prevSibling && (
         <MenuItem
           label="Merge with Above"
+          classic={cm}
           onClick={() => { mergeSections(section.id, prevSibling.id); onClose(); }}
         />
       )}
       {nextSibling && (
         <MenuItem
           label="Merge with Below"
+          classic={cm}
           onClick={() => { mergeSections(section.id, nextSibling.id); onClose(); }}
         />
       )}
       {canMergeAllAbove && (
         <MenuItem
           label={`Merge All Above (${siblingsAbove.length})`}
+          classic={cm}
           onClick={() => { mergeMultipleSections(siblingsAbove.map((s) => s.id)); onClose(); }}
         />
       )}
       {canMergeAllBelow && (
         <MenuItem
           label={`Merge All Below (${siblingsBelow.length})`}
+          classic={cm}
           onClick={() => { mergeMultipleSections(siblingsBelow.map((s) => s.id)); onClose(); }}
         />
       )}
       <MenuDivider />
       <MenuItem
         label="Remove Section"
+        classic={cm}
         onClick={() => { removeSection(section.id); onClose(); }}
       />
       <MenuItem
         label="Delete Section"
         danger
+        classic={cm}
         onClick={() => { deleteSection(section.id); onClose(); }}
       />
     </div>
@@ -668,10 +708,12 @@ function MenuItem({
   label,
   onClick,
   danger = false,
+  classic = false,
 }: {
   label: string;
   onClick: () => void;
   danger?: boolean;
+  classic?: boolean;
 }) {
   return (
     <button
@@ -682,12 +724,12 @@ function MenuItem({
         padding: '6px 14px',
         background: 'none',
         border: 'none',
-        color: danger ? '#f87171' : '#e0e0e0',
+        color: danger ? '#f87171' : classic ? '#2a2a3a' : '#e0e0e0',
         fontSize: '12px',
         textAlign: 'left',
         cursor: 'pointer',
       }}
-      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = '#2a2a3e'; }}
+      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = classic ? '#e8e9ec' : '#2a2a3e'; }}
       onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = 'transparent'; }}
     >
       {label}

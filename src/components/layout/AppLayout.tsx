@@ -10,11 +10,19 @@ import { Toolbar } from '../toolbar/Toolbar';
 import { StatusBar } from './StatusBar';
 import { DockviewLayout } from './DockviewLayout';
 import { useLayoutStore } from '../../stores/layoutStore';
+import { useProjectStore } from '../../stores/projectStore';
 
 export function AppLayout() {
   const sidebarRef = useRef<PanelImperativeHandle>(null);
   const setSidebarPanelApi = useLayoutStore((s) => s.setSidebarPanelApi);
   const setSidebarCollapsed = useLayoutStore((s) => s.setSidebarCollapsed);
+  const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+
+  // Toggle body class for global CSS overrides
+  useEffect(() => {
+    document.body.classList.toggle('classic-mode', classicMode);
+    return () => { document.body.classList.remove('classic-mode'); };
+  }, [classicMode]);
 
   useEffect(() => {
     if (sidebarRef.current) {
@@ -35,11 +43,12 @@ export function AppLayout() {
         flexDirection: 'column',
         height: '100vh',
         width: '100vw',
-        backgroundColor: '#0d0d18',
-        color: '#e0e0e0',
+        backgroundColor: classicMode ? '#f0f1f3' : '#0d0d18',
+        color: classicMode ? '#1a1a2a' : '#e0e0e0',
         fontFamily:
           '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         overflow: 'hidden',
+        transition: 'background-color 0.3s, color 0.3s',
       }}
     >
       <Toolbar />
@@ -58,8 +67,9 @@ export function AppLayout() {
             style={{
               height: '100%',
               overflow: 'auto',
-              backgroundColor: '#0f0f1a',
-              borderRight: '1px solid #1a1a2e',
+              backgroundColor: classicMode ? '#e8e9ec' : '#0f0f1a',
+              borderRight: classicMode ? '1px solid #d0d3d8' : '1px solid #1a1a2e',
+              transition: 'background-color 0.3s, border-color 0.3s',
             }}
           >
             <SchemeSidebar />
@@ -68,7 +78,7 @@ export function AppLayout() {
         <PanelResizeHandle
           style={{
             width: '4px',
-            backgroundColor: '#1a1a2e',
+            backgroundColor: classicMode ? '#d0d3d8' : '#1a1a2e',
             cursor: 'col-resize',
             transition: 'background-color 0.15s',
           }}

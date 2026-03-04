@@ -295,8 +295,18 @@ function GeneralSettings() {
     tts.speak('3, Key Point', { ...ttsConfig, enabled: true, duckMainAudio: false });
   };
 
+  const classicMode = useProjectStore(s => s.project.settings.classicMode);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Sonocent Classic Mode */}
+      <SettingToggleRow
+        title="Sonocent Classic Mode"
+        description="Light theme with flat solid colored bars, matching the original Sonocent Audio Notetaker aesthetic"
+        value={classicMode}
+        onChange={() => updateSettings({ classicMode: !classicMode })}
+      />
+
       {/* Tooltips toggle */}
       <SettingToggleRow
         title="Show Keyboard Shortcut Tooltips"

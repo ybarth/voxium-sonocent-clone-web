@@ -57,3 +57,46 @@ button {
 [data-panel-resize-handle-id]:hover {
   background-color: #3B82F6 !important;
 }
+
+/* ─── Sonocent Classic Mode (light theme) ─────────────────────────────────── */
+
+body.classic-mode {
+  background-color: #f0f1f3;
+  color: #1a1a2a;
+}
+
+body.classic-mode ::-webkit-scrollbar-track {
+  background: #e8e9ec;
+}
+
+body.classic-mode ::-webkit-scrollbar-thumb {
+  background: #b8bcc4;
+}
+
+body.classic-mode ::-webkit-scrollbar-thumb:hover {
+  background: #9ca0a8;
+}
+
+body.classic-mode ::selection {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+body.classic-mode [data-panel-resize-handle-id] {
+  background-color: #d0d3d8 !important;
+}
+
+body.classic-mode [data-panel-resize-handle-id]:hover {
+  background-color: #3B82F6 !important;
+}
+
+/* Sidebar selects and inputs in classic mode */
+body.classic-mode select {
+  background-color: #d8dae0 !important;
+  border-color: #b8bcc4 !important;
+  color: #2a2a3a !important;
+}
+
+body.classic-mode select option {
+  background-color: #e8e9ec;
+  color: #2a2a3a;
+}

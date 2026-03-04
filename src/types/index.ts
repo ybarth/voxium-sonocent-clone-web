@@ -224,6 +224,8 @@ export interface ProjectSettings {
   chunkNumberStyle: ChunkNumberPresetId;
   // Phase 3: default fallback attributes
   defaultAttributes: DefaultAttributes;
+  // Sonocent Classic mode: light theme with flat solid colored bars
+  classicMode: boolean;
 }
 
 export interface InsertionPoint {
@@ -351,4 +353,5 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   filter: DEFAULT_FILTER_STATE,
   chunkNumberStyle: 'default',
   defaultAttributes: DEFAULT_FORM_ATTRIBUTES,
+  classicMode: false,
 };

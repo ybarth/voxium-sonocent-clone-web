@@ -43,7 +43,8 @@ export const ChunkBar = memo(function ChunkBar({
   const barRef = useRef<HTMLDivElement>(null);
   const settings = useProjectStore((s) => s.project.settings);
   const scheme = useProjectStore((s) => s.project.scheme);
-  const visualMode = settings.visualMode;
+  const classicMode = settings.classicMode;
+  const visualMode = classicMode ? 'flat' as const : settings.visualMode;
   const numberDisplay = settings.chunkNumberDisplay;
   const zoomLevel = settings.zoomLevel ?? 1.0;
 
@@ -210,34 +211,57 @@ export const ChunkBar = memo(function ChunkBar({
 
   // Build container style
   const defaultRadius = `${3 * zoomLevel}px`;
-  const containerStyle: React.CSSProperties = {
-    width: `${width}px`,
-    height: `${currentBarHeight}px`,
-    borderRadius: shapeBorderRadius ?? defaultRadius,
-    position: 'relative',
-    cursor: MODIFIER_MODE_META[modifierMode].cursor,
-    margin: `${2 * zoomLevel}px`,
-    display: 'inline-block',
-    verticalAlign: 'top',
-    transition: 'transform 0.15s, box-shadow 0.15s, width 0.28s linear, height 0.1s',
-    transform: isCurrent ? 'scale(1.05)' : 'none',
-    boxShadow: isSelected
-      ? `0 0 0 ${2 * zoomLevel}px #3B82F6, 0 0 ${6 * zoomLevel}px rgba(59,130,246,0.4)`
-      : `0 ${1 * zoomLevel}px ${2 * zoomLevel}px rgba(0,0,0,0.1)`,
-    overflow: 'hidden',
-    userSelect: 'none',
-    zIndex: isCurrent ? 10 : 1,
-    // Shape clip-path
-    ...(shapeClipPath !== 'none' ? { clipPath: shapeClipPath } : {}),
-    // Filter dimming
-    ...(isFilterDimmed ? { opacity: 0.2, filter: 'grayscale(0.8)' } : {}),
-  };
+  const containerStyle: React.CSSProperties = classicMode
+    ? {
+        // ── Sonocent Classic: clean flat solid bar ──
+        width: `${width}px`,
+        height: `${currentBarHeight}px`,
+        borderRadius: `${2 * zoomLevel}px`,
+        position: 'relative',
+        cursor: MODIFIER_MODE_META[modifierMode].cursor,
+        margin: `${1.5 * zoomLevel}px ${1 * zoomLevel}px`,
+        display: 'inline-block',
+        verticalAlign: 'top',
+        transition: 'box-shadow 0.15s, width 0.28s linear',
+        backgroundColor: baseColor,
+        boxShadow: isSelected
+          ? `0 0 0 ${2 * zoomLevel}px #2563EB`
+          : `0 ${0.5 * zoomLevel}px ${1 * zoomLevel}px rgba(0,0,0,0.12)`,
+        overflow: 'hidden',
+        userSelect: 'none',
+        zIndex: isCurrent ? 10 : 1,
+        ...(isFilterDimmed ? { opacity: 0.2, filter: 'grayscale(0.8)' } : {}),
+      }
+    : {
+        width: `${width}px`,
+        height: `${currentBarHeight}px`,
+        borderRadius: shapeBorderRadius ?? defaultRadius,
+        position: 'relative',
+        cursor: MODIFIER_MODE_META[modifierMode].cursor,
+        margin: `${2 * zoomLevel}px`,
+        display: 'inline-block',
+        verticalAlign: 'top',
+        transition: 'transform 0.15s, box-shadow 0.15s, width 0.28s linear, height 0.1s',
+        transform: isCurrent ? 'scale(1.05)' : 'none',
+        boxShadow: isSelected
+          ? `0 0 0 ${2 * zoomLevel}px #3B82F6, 0 0 ${6 * zoomLevel}px rgba(59,130,246,0.4)`
+          : `0 ${1 * zoomLevel}px ${2 * zoomLevel}px rgba(0,0,0,0.1)`,
+        overflow: 'hidden',
+        userSelect: 'none',
+        zIndex: isCurrent ? 10 : 1,
+        // Shape clip-path
+        ...(shapeClipPath !== 'none' ? { clipPath: shapeClipPath } : {}),
+        // Filter dimming
+        ...(isFilterDimmed ? { opacity: 0.2, filter: 'grayscale(0.8)' } : {}),
+      };
 
-  // Apply background: either rich style or simple color
-  if (hasStyle && visualMode === 'flat') {
-    Object.assign(containerStyle, flatBgStyle);
-  } else {
-    containerStyle.backgroundColor = bgColor;
+  // Apply background: either rich style or simple color (skip in classic mode — already set above)
+  if (!classicMode) {
+    if (hasStyle && visualMode === 'flat') {
+      Object.assign(containerStyle, flatBgStyle);
+    } else {
+      containerStyle.backgroundColor = bgColor;
+    }
   }
 
   return (
@@ -263,8 +287,8 @@ export const ChunkBar = memo(function ChunkBar({
         />
       )}
 
-      {/* Waveform canvas */}
-      {visualMode === 'waveform' && (
+      {/* Waveform canvas (disabled in classic mode) */}
+      {!classicMode && visualMode === 'waveform' && (
         <canvas
           ref={canvasRef}
           style={{
@@ -313,7 +337,19 @@ export const ChunkBar = memo(function ChunkBar({
       {/* Chunk number badge */}
       {numberLabel && (
         <div
-          style={{
+          style={classicMode ? {
+            position: 'absolute',
+            top: `${1 * zoomLevel}px`,
+            left: `${3 * zoomLevel}px`,
+            fontSize: `${Math.max(7, 9 * zoomLevel)}px`,
+            fontWeight: 700,
+            color: getContrastColor(baseColor),
+            opacity: 0.85,
+            whiteSpace: 'nowrap',
+            zIndex: 1,
+            lineHeight: 1,
+            pointerEvents: 'none',
+          } : {
             position: 'absolute',
             top: `${1 * zoomLevel}px`,
             left: `${3 * zoomLevel}px`,
@@ -337,8 +373,8 @@ export const ChunkBar = memo(function ChunkBar({
         </div>
       )}
 
-      {/* Duration label - only show if width allows */}
-      {width > 40 * zoomLevel && (
+      {/* Duration label - only show if width allows (hidden in classic mode for cleaner look) */}
+      {!classicMode && width > 40 * zoomLevel && (
         <div
           style={{
             position: 'absolute',

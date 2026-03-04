@@ -3,7 +3,7 @@ import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
   Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
   ZoomIn, ZoomOut, ChevronDown, Settings, MessageSquare, MessageSquareOff,
-  Undo2, Redo2, Filter, Wand2,
+  Undo2, Redo2, Filter, Wand2, Sun, Moon,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
@@ -31,6 +31,7 @@ export function Toolbar() {
   const filterActive = useProjectStore((s) => s.project.settings.filter.active);
   const filterCount = useProjectStore((s) => s.project.settings.filter.criteria.length);
   const clearFilter = useProjectStore((s) => s.clearFilter);
+  const classicMode = useProjectStore((s) => s.project.settings.classicMode);
 
   const showTooltips = useKeybindingStore((s) => s.showTooltips);
   const setShowTooltips = useKeybindingStore((s) => s.setShowTooltips);
@@ -106,10 +107,11 @@ export function Toolbar() {
         alignItems: 'center',
         gap: '4px',
         padding: '6px 12px',
-        backgroundColor: '#0f0f1a',
-        borderBottom: '1px solid #1a1a2e',
+        backgroundColor: classicMode ? '#e8e9ec' : '#0f0f1a',
+        borderBottom: classicMode ? '1px solid #d0d3d8' : '1px solid #1a1a2e',
         flexShrink: 0,
         flexWrap: 'wrap',
+        transition: 'background-color 0.3s, border-color 0.3s',
       }}
     >
       {/* Record */}
@@ -127,7 +129,7 @@ export function Toolbar() {
           style={{
             width: '40px',
             height: '16px',
-            backgroundColor: '#1a1a2e',
+            backgroundColor: classicMode ? '#d0d3d8' : '#1a1a2e',
             borderRadius: '3px',
             overflow: 'hidden',
             marginRight: '4px',
@@ -176,12 +178,12 @@ export function Toolbar() {
               position: 'absolute',
               top: '100%',
               left: 0,
-              backgroundColor: '#1e1e2e',
-              border: '1px solid #2a2a3e',
+              backgroundColor: classicMode ? '#ffffff' : '#1e1e2e',
+              border: classicMode ? '1px solid #d0d3d8' : '1px solid #2a2a3e',
               borderRadius: '6px',
               padding: '4px 0',
               minWidth: '180px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+              boxShadow: classicMode ? '0 4px 16px rgba(0,0,0,0.12)' : '0 4px 16px rgba(0,0,0,0.5)',
               zIndex: 1000,
             }}
             onMouseLeave={() => setShowImportDropdown(false)}
@@ -236,10 +238,10 @@ export function Toolbar() {
           updateSettings({ playbackSpeed: parseFloat(e.target.value) })
         }
         style={{
-          backgroundColor: '#1a1a2e',
-          border: '1px solid #2a2a3e',
+          backgroundColor: classicMode ? '#d0d3d8' : '#1a1a2e',
+          border: classicMode ? '1px solid #b8bcc4' : '1px solid #2a2a3e',
           borderRadius: '4px',
-          color: '#a0a0b0',
+          color: classicMode ? '#2a2a3a' : '#a0a0b0',
           fontSize: '11px',
           padding: '4px 6px',
           cursor: 'pointer',
@@ -355,7 +357,7 @@ export function Toolbar() {
         onClick={() => handleZoom('out')}
         commandId="view.zoomOut"
       />
-      <div style={{ fontSize: '10px', color: '#606070', minWidth: '30px', textAlign: 'center' }}>
+      <div style={{ fontSize: '10px', color: classicMode ? '#808898' : '#606070', minWidth: '30px', textAlign: 'center' }}>
         {Math.round((project.settings.zoomLevel ?? 1.0) * 100)}%
       </div>
       <ToolbarButton
@@ -408,6 +410,14 @@ export function Toolbar() {
         commandId="forge.open"
       />
 
+      {/* Sonocent Classic Mode toggle */}
+      <ToolbarToggle
+        icon={classicMode ? <Sun size={14} /> : <Moon size={14} />}
+        label={classicMode ? 'Classic Mode' : 'Modern Mode'}
+        active={classicMode}
+        onClick={() => updateSettings({ classicMode: !classicMode })}
+      />
+
       {/* Settings */}
       <ToolbarButton
         icon={<Settings size={14} />}
@@ -432,11 +442,11 @@ export function Toolbar() {
         <span
           style={{
             fontSize: '11px',
-            color: '#606070',
+            color: classicMode ? '#808898' : '#606070',
           }}
         >
           {selectedIds.length} chunk{selectedIds.length !== 1 ? 's' : ''} selected
-          {selectedIds.length >= 2 && <span style={{ color: '#505060' }}> (m to merge)</span>}
+          {selectedIds.length >= 2 && <span style={{ color: classicMode ? '#9ca0a8' : '#505060' }}> (m to merge)</span>}
         </span>
       )}
       <SectionSelectionInfo />
@@ -524,6 +534,7 @@ function ToolbarButton({
   /** Manual shortcut override (used when there's no command ID) */
   shortcut?: string;
 }) {
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
   const btn = (
     <button
       onClick={onClick}
@@ -536,17 +547,17 @@ function ToolbarButton({
         backgroundColor: active
           ? danger
             ? '#7f1d1d'
-            : '#1e3a5f'
+            : cm ? '#dbeafe' : '#1e3a5f'
           : 'transparent',
         border: '1px solid transparent',
         borderRadius: '5px',
         color: disabled
-          ? '#404050'
+          ? cm ? '#a0a0b0' : '#404050'
           : danger && active
           ? '#fca5a5'
           : active
-          ? '#93c5fd'
-          : '#a0a0b0',
+          ? cm ? '#1d4ed8' : '#93c5fd'
+          : cm ? '#505060' : '#a0a0b0',
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: '11px',
         fontWeight: 500,
@@ -556,14 +567,14 @@ function ToolbarButton({
       onMouseEnter={(e) => {
         if (!disabled)
           (e.target as HTMLElement).style.backgroundColor =
-            active ? '' : '#1a1a2e';
+            active ? '' : cm ? '#d0d3d8' : '#1a1a2e';
       }}
       onMouseLeave={(e) => {
         if (!disabled)
           (e.target as HTMLElement).style.backgroundColor = active
             ? danger
               ? '#7f1d1d'
-              : '#1e3a5f'
+              : cm ? '#dbeafe' : '#1e3a5f'
             : 'transparent';
       }}
     >
@@ -580,6 +591,7 @@ function ToolbarButton({
 }
 
 function DropdownItem({ label, onClick }: { label: string; onClick: () => void }) {
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
   return (
     <button
       onClick={onClick}
@@ -589,12 +601,12 @@ function DropdownItem({ label, onClick }: { label: string; onClick: () => void }
         padding: '6px 14px',
         background: 'none',
         border: 'none',
-        color: '#e0e0e0',
+        color: cm ? '#2a2a3a' : '#e0e0e0',
         fontSize: '12px',
         textAlign: 'left',
         cursor: 'pointer',
       }}
-      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = '#2a2a3e'; }}
+      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = cm ? '#e8e9ec' : '#2a2a3e'; }}
       onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = 'transparent'; }}
     >
       {label}
@@ -613,6 +625,7 @@ function ToolbarToggle({
   active: boolean;
   onClick: () => void;
 }) {
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
   return (
     <button
       onClick={onClick}
@@ -622,10 +635,12 @@ function ToolbarToggle({
         alignItems: 'center',
         gap: '4px',
         padding: '5px 8px',
-        backgroundColor: active ? 'rgba(59,130,246,0.15)' : 'transparent',
+        backgroundColor: active
+          ? cm ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.15)'
+          : 'transparent',
         border: '1px solid transparent',
         borderRadius: '5px',
-        color: active ? '#60a5fa' : '#505060',
+        color: active ? (cm ? '#1d4ed8' : '#60a5fa') : (cm ? '#808898' : '#505060'),
         cursor: 'pointer',
         fontSize: '11px',
         fontWeight: 500,
@@ -633,12 +648,12 @@ function ToolbarToggle({
       }}
       onMouseEnter={(e) => {
         (e.target as HTMLElement).style.backgroundColor = active
-          ? 'rgba(59,130,246,0.2)'
-          : '#1a1a2e';
+          ? cm ? 'rgba(59,130,246,0.18)' : 'rgba(59,130,246,0.2)'
+          : cm ? '#d0d3d8' : '#1a1a2e';
       }}
       onMouseLeave={(e) => {
         (e.target as HTMLElement).style.backgroundColor = active
-          ? 'rgba(59,130,246,0.15)'
+          ? cm ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.15)'
           : 'transparent';
       }}
     >
@@ -648,12 +663,13 @@ function ToolbarToggle({
 }
 
 function Divider() {
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
   return (
     <div
       style={{
         width: '1px',
         height: '24px',
-        backgroundColor: '#1a1a2e',
+        backgroundColor: cm ? '#c0c4cc' : '#1a1a2e',
         margin: '0 4px',
       }}
     />

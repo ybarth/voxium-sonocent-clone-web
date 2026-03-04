@@ -24,6 +24,7 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
 
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
   const chunks = useProjectStore((s) => s.project.chunks);
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
 
   const showMoveTake = take.chunkIds.length > 0 && !isRecording;
 
@@ -93,12 +94,12 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
         position: 'fixed',
         left: x,
         top: y,
-        backgroundColor: '#1e1e2e',
-        border: '1px solid #2a2a3e',
+        backgroundColor: cm ? '#ffffff' : '#1e1e2e',
+        border: cm ? '1px solid #d0d3d8' : '1px solid #2a2a3e',
         borderRadius: '6px',
         padding: '4px 0',
         minWidth: '200px',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+        boxShadow: cm ? '0 4px 16px rgba(0,0,0,0.15)' : '0 4px 16px rgba(0,0,0,0.5)',
         zIndex: 1000,
       }}
     >
@@ -150,6 +151,7 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
 }
 
 function CtxMenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  const cm = useProjectStore((s) => s.project.settings.classicMode);
   return (
     <button
       onClick={onClick}
@@ -159,12 +161,12 @@ function CtxMenuItem({ label, onClick }: { label: string; onClick: () => void })
         padding: '6px 14px',
         background: 'none',
         border: 'none',
-        color: '#e0e0e0',
+        color: cm ? '#2a2a3a' : '#e0e0e0',
         fontSize: '12px',
         textAlign: 'left',
         cursor: 'pointer',
       }}
-      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = '#2a2a3e'; }}
+      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = cm ? '#e8e9ec' : '#2a2a3e'; }}
       onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = 'transparent'; }}
     >
       {label}

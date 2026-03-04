@@ -80,3 +80,49 @@
   background-color: #0d0d18;
   color: #606070;
 }
+
+/* ─── Sonocent Classic Mode overrides ─────────────────────────────────────── */
+
+body.classic-mode .dockview-theme-custom {
+  --dv-paneview-header-border-color: #d0d3d8;
+  --dv-tabs-and-actions-container-background-color: #e8e9ec;
+  --dv-activegroup-visiblepanel-tab-background-color: #f0f1f3;
+  --dv-activegroup-hiddenpanel-tab-background-color: #dcdee2;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #e8e9ec;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #dcdee2;
+  --dv-activegroup-visiblepanel-tab-color: #1a1a2a;
+  --dv-activegroup-hiddenpanel-tab-color: #808090;
+  --dv-inactivegroup-visiblepanel-tab-color: #505060;
+  --dv-inactivegroup-hiddenpanel-tab-color: #808090;
+  --dv-separator-border: #d0d3d8;
+  --dv-background-color: #f0f1f3;
+  --dv-group-view-background-color: #f0f1f3;
+  --dv-drag-over-background-color: rgba(59, 130, 246, 0.08);
+  --dv-drag-over-border-color: #3b82f6;
+}
+
+body.classic-mode .dockview-theme-custom .dv-tabs-and-actions-container {
+  background-color: #e8e9ec !important;
+}
+
+body.classic-mode .dockview-theme-custom .dv-tab {
+  background-color: #e8e9ec !important;
+}
+
+body.classic-mode .dockview-theme-custom .dv-tab.dv-activegroup-visiblepanel-tab {
+  background-color: #f0f1f3 !important;
+}
+
+body.classic-mode .dockview-theme-custom .dv-resize-container > .dv-resize-handle-horizontal,
+body.classic-mode .dockview-theme-custom .dv-resize-container > .dv-resize-handle-vertical {
+  background-color: #d0d3d8;
+}
+
+body.classic-mode .dockview-theme-custom .dv-content-container {
+  background-color: #f0f1f3;
+}
+
+body.classic-mode .dockview-theme-custom .dv-watermark {
+  background-color: #f0f1f3;
+  color: #808090;
+}

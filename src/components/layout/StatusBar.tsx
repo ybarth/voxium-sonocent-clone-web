@@ -3,6 +3,7 @@ import { useProjectStore } from '../../stores/projectStore';
 export function StatusBar() {
   const project = useProjectStore((s) => s.project);
   const playback = useProjectStore((s) => s.playback);
+  const classicMode = project.settings.classicMode;
   const chunks = project.chunks.filter((c) => !c.isDeleted);
 
   const currentChunk = chunks.find((c) => c.id === playback.currentChunkId);
@@ -32,12 +33,13 @@ export function StatusBar() {
         alignItems: 'center',
         gap: '16px',
         padding: '4px 16px',
-        backgroundColor: '#0a0a14',
-        borderTop: '1px solid #1a1a2e',
+        backgroundColor: classicMode ? '#dcdee2' : '#0a0a14',
+        borderTop: classicMode ? '1px solid #c0c4cc' : '1px solid #1a1a2e',
         fontSize: '11px',
-        color: '#505060',
+        color: classicMode ? '#606878' : '#505060',
         flexShrink: 0,
         height: '28px',
+        transition: 'background-color 0.3s, border-color 0.3s, color 0.3s',
       }}
     >
       <span>
