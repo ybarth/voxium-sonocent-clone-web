@@ -41,6 +41,37 @@ interface SelectionState {
   focusedPaneId: 'audio' | 'text' | 'annotations' | 'file';
 }
 
+// Paintbrush: apply actions at a given scope
+export type PaintbrushScope =
+  | 'single-chunk'
+  | 'single-section'
+  | 'form-of-chunk'            // all chunks with formId X
+  | 'form-of-section'          // all sections with sectionFormId Y
+  | 'form-of-chunk-in-section' // chunks with formId X in section Y
+  | 'form-of-chunk-in-section-form'; // chunks with formId X in sections with sectionFormId Y
+
+export type ResettableAttribute = 'form' | 'section-form' | 'color' | 'tags' | 'shape';
+
+export type PaintbrushAction =
+  | { type: 'apply-form'; formId: string }
+  | { type: 'apply-tags'; tags: string[] }
+  | { type: 'remove-tags'; tags: string[] }
+  | { type: 'reset-attribute'; attribute: ResettableAttribute };
+
+export interface PaintbrushMode {
+  action: PaintbrushAction;
+  scope: PaintbrushScope;
+  scopeFilterFormId?: string;
+  scopeFilterSectionFormId?: string;
+}
+
+// Virtual clipboard for cut/copy/paste
+export interface ClipboardState {
+  chunks: Chunk[];
+  sourceSectionId: string | null;
+  mode: 'cut' | 'copy' | null;
+}
+
 interface ProjectStore {
   project: Project;
   playback: PlaybackState;
@@ -214,6 +245,41 @@ interface ProjectStore {
   deleteProjectScheme: (id: string) => void;
   duplicateProjectScheme: (id: string) => void;
 
+  // Phase 2: Tags
+  tagChunks: (ids: string[], tags: string[]) => void;
+  untagChunks: (ids: string[], tags: string[]) => void;
+  tagSections: (ids: string[], tags: string[]) => void;
+  untagSections: (ids: string[], tags: string[]) => void;
+  addTagToLibrary: (tag: string) => void;
+  removeTagFromLibrary: (tag: string) => void;
+
+  // Phase 2: Selection Checkmarks
+  checkSelectionMode: boolean;
+  setCheckSelectionMode: (on: boolean) => void;
+  checkedChunkIds: Set<string>;
+  checkedSectionIds: Set<string>;
+  toggleCheckChunk: (id: string) => void;
+  toggleCheckSection: (id: string) => void;
+  checkAllSelected: () => void;
+  uncheckAll: () => void;
+  applyToChecked: (action: 'style' | 'form' | 'sectionForm' | 'delete' | 'tag', payload?: unknown) => void;
+
+  // Phase 2: Paintbrush
+  paintbrushMode: PaintbrushMode | null;
+  setPaintbrushMode: (mode: PaintbrushMode | null) => void;
+  applyPaintbrush: (targetId: string, targetType: 'chunk' | 'section') => void;
+  resetChunkAttribute: (ids: string[], attribute: ResettableAttribute) => void;
+  resetSectionAttribute: (ids: string[], attribute: ResettableAttribute) => void;
+
+  // Phase 2.5: Virtual Clipboard
+  clipboard: ClipboardState;
+  clipboardCut: () => void;
+  clipboardCopy: () => void;
+  clipboardPaste: () => void;
+
+  // Phase 2.5: Drag-and-Drop Chunk Reorder
+  moveChunksToPosition: (chunkIds: string[], targetSectionId: string, targetOrderIndex: number) => void;
+
   pushUndo: (type: UndoAction['type']) => void;
   undo: () => void;
   redo: () => void;
@@ -245,6 +311,7 @@ const initialSection: Section = {
   depth: 0,
   status: 'active',
   sectionFormId: null,
+  tags: [],
 };
 
 const initialScheme: Scheme = STANDARD_SCHEME;
@@ -270,6 +337,7 @@ const initialProject: Project = {
   sectionSchemes: [STANDARD_SECTION_SCHEME],
   projectScheme: STANDARD_PROJECT_SCHEME,
   projectSchemes: [STANDARD_PROJECT_SCHEME],
+  tagLibrary: [],
   undoStack: [],
   redoStack: [],
 };
@@ -320,6 +388,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     anchorSectionId: null,
     focusedPaneId: 'audio',
   },
+
+  // Phase 2: Selection checkmarks
+  checkSelectionMode: false,
+  checkedChunkIds: new Set<string>(),
+  checkedSectionIds: new Set<string>(),
+
+  // Phase 2: Paintbrush
+  paintbrushMode: null,
+
+  // Phase 2.5: Virtual clipboard
+  clipboard: { chunks: [], sourceSectionId: null, mode: null },
 
   audioContext: null,
 
@@ -516,6 +595,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         color: toMerge[0].color,
         style: toMerge[0].style ?? null,
         formId: toMerge[0].formId ?? null,
+        tags: [...new Set(toMerge.flatMap(c => c.tags ?? []))],
         isDeleted: false,
         waveformData: null,
       };
@@ -559,6 +639,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       depth,
       status: 'active',
       sectionFormId: null,
+      tags: [],
     };
 
     // Bump sibling orderIndexes that are >= the new orderIndex (when inserting in the middle)
@@ -796,6 +877,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       depth: section.depth,
       status: 'active',
       sectionFormId: null,
+      tags: [...(section.tags ?? [])],
     };
 
     set((s) => {
@@ -1842,7 +1924,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const idx = existing.findIndex((c) =>
         c.type === criterion.type &&
         c.colorHex === criterion.colorHex &&
-        c.textureId === criterion.textureId
+        c.textureId === criterion.textureId &&
+        c.formId === criterion.formId &&
+        c.tag === criterion.tag
       );
       const newCriteria = idx >= 0
         ? existing.filter((_, i) => i !== idx)
@@ -1874,6 +1958,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }
         if (crit.type === 'texture' && crit.textureId) {
           if (chunk.style?.texture?.builtinId === crit.textureId) { matching.add(chunk.id); break; }
+        }
+        if (crit.type === 'form' && crit.formId) {
+          if (chunk.formId === crit.formId) { matching.add(chunk.id); break; }
+        }
+        if (crit.type === 'tag' && crit.tag) {
+          if ((chunk.tags ?? []).includes(crit.tag)) { matching.add(chunk.id); break; }
         }
       }
     }
@@ -2733,6 +2823,537 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         projectSchemes: [...s.project.projectSchemes, copy],
       },
     }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Tags
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  tagChunks: (ids, tags) => {
+    if (ids.length === 0 || tags.length === 0) return;
+    get().pushUndo('tag-chunks');
+    set((s) => {
+      // Add new tags to library
+      const libSet = new Set(s.project.tagLibrary);
+      tags.forEach(t => libSet.add(t));
+      return {
+        project: {
+          ...s.project,
+          chunks: s.project.chunks.map((c) =>
+            ids.includes(c.id)
+              ? { ...c, tags: [...new Set([...(c.tags ?? []), ...tags])] }
+              : c
+          ),
+          tagLibrary: [...libSet],
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  untagChunks: (ids, tags) => {
+    if (ids.length === 0 || tags.length === 0) return;
+    get().pushUndo('tag-chunks');
+    const tagSet = new Set(tags);
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) =>
+          ids.includes(c.id)
+            ? { ...c, tags: (c.tags ?? []).filter(t => !tagSet.has(t)) }
+            : c
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  tagSections: (ids, tags) => {
+    if (ids.length === 0 || tags.length === 0) return;
+    get().pushUndo('tag-sections');
+    set((s) => {
+      const libSet = new Set(s.project.tagLibrary);
+      tags.forEach(t => libSet.add(t));
+      return {
+        project: {
+          ...s.project,
+          sections: s.project.sections.map((sec) =>
+            ids.includes(sec.id)
+              ? { ...sec, tags: [...new Set([...(sec.tags ?? []), ...tags])] }
+              : sec
+          ),
+          tagLibrary: [...libSet],
+          updatedAt: new Date(),
+        },
+      };
+    });
+  },
+
+  untagSections: (ids, tags) => {
+    if (ids.length === 0 || tags.length === 0) return;
+    get().pushUndo('tag-sections');
+    const tagSet = new Set(tags);
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) =>
+          ids.includes(sec.id)
+            ? { ...sec, tags: (sec.tags ?? []).filter(t => !tagSet.has(t)) }
+            : sec
+        ),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  addTagToLibrary: (tag) => {
+    set((s) => {
+      if (s.project.tagLibrary.includes(tag)) return s;
+      return {
+        project: {
+          ...s.project,
+          tagLibrary: [...s.project.tagLibrary, tag],
+        },
+      };
+    });
+  },
+
+  removeTagFromLibrary: (tag) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        tagLibrary: s.project.tagLibrary.filter(t => t !== tag),
+        // Also remove from all chunks and sections
+        chunks: s.project.chunks.map(c => ({
+          ...c,
+          tags: (c.tags ?? []).filter(t => t !== tag),
+        })),
+        sections: s.project.sections.map(sec => ({
+          ...sec,
+          tags: (sec.tags ?? []).filter(t => t !== tag),
+        })),
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Selection Checkmarks
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  setCheckSelectionMode: (on) => {
+    if (!on) {
+      // Turning off mode also clears all checks
+      set({ checkSelectionMode: false, checkedChunkIds: new Set(), checkedSectionIds: new Set() });
+    } else {
+      set({ checkSelectionMode: true });
+    }
+  },
+
+  toggleCheckChunk: (id) => {
+    set((s) => {
+      const next = new Set(s.checkedChunkIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { checkedChunkIds: next };
+    });
+  },
+
+  toggleCheckSection: (id) => {
+    set((s) => {
+      const next = new Set(s.checkedSectionIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { checkedSectionIds: next };
+    });
+  },
+
+  checkAllSelected: () => {
+    set((s) => ({
+      checkedChunkIds: new Set([...s.checkedChunkIds, ...s.selection.selectedChunkIds]),
+      checkedSectionIds: new Set([...s.checkedSectionIds, ...s.selection.selectedSectionIds]),
+    }));
+  },
+
+  uncheckAll: () => {
+    set({ checkedChunkIds: new Set(), checkedSectionIds: new Set() });
+  },
+
+  applyToChecked: (action, payload) => {
+    const state = get();
+    const chunkIds = Array.from(state.checkedChunkIds);
+    const sectionIds = Array.from(state.checkedSectionIds);
+
+    switch (action) {
+      case 'style':
+        if (chunkIds.length > 0 && payload) state.styleChunks(chunkIds, payload as ChunkStyle);
+        break;
+      case 'form':
+        if (chunkIds.length > 0 && payload) state.applyForm(chunkIds, payload as string);
+        break;
+      case 'sectionForm':
+        if (sectionIds.length > 0 && payload) state.applySectionForm(sectionIds, payload as string);
+        break;
+      case 'delete':
+        if (chunkIds.length > 0) state.deleteChunks(chunkIds);
+        break;
+      case 'tag':
+        if (payload) {
+          const tags = payload as string[];
+          if (chunkIds.length > 0) state.tagChunks(chunkIds, tags);
+          if (sectionIds.length > 0) state.tagSections(sectionIds, tags);
+        }
+        break;
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2: Paintbrush (Scheme-Aware Scope Painting)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  setPaintbrushMode: (mode) => {
+    set({ paintbrushMode: mode });
+  },
+
+  applyPaintbrush: (targetId, targetType) => {
+    const state = get();
+    const mode = state.paintbrushMode;
+    if (!mode) return;
+
+    const { project } = state;
+
+    // ── Phase A: Resolve target chunkIds[] and sectionIds[] from scope ──
+    let chunkIds: string[] = [];
+    let sectionIds: string[] = [];
+
+    switch (mode.scope) {
+      case 'single-chunk': {
+        if (targetType === 'chunk') chunkIds = [targetId];
+        break;
+      }
+      case 'single-section': {
+        if (targetType === 'section') {
+          sectionIds = [targetId];
+          chunkIds = project.chunks.filter(c => !c.isDeleted && c.sectionId === targetId).map(c => c.id);
+        }
+        break;
+      }
+      case 'form-of-chunk': {
+        const filterFormId = mode.scopeFilterFormId;
+        if (!filterFormId) return;
+        chunkIds = project.chunks.filter(c => !c.isDeleted && c.formId === filterFormId).map(c => c.id);
+        break;
+      }
+      case 'form-of-section': {
+        const filterSfId = mode.scopeFilterSectionFormId;
+        if (!filterSfId) return;
+        sectionIds = project.sections
+          .filter(s => s.sectionFormId === filterSfId && (s.status ?? 'active') === 'active')
+          .map(s => s.id);
+        const secSet = new Set(sectionIds);
+        chunkIds = project.chunks.filter(c => !c.isDeleted && secSet.has(c.sectionId)).map(c => c.id);
+        break;
+      }
+      case 'form-of-chunk-in-section': {
+        if (targetType !== 'section') return;
+        const filterFormId2 = mode.scopeFilterFormId;
+        if (!filterFormId2) return;
+        sectionIds = [targetId];
+        chunkIds = project.chunks
+          .filter(c => !c.isDeleted && c.sectionId === targetId && c.formId === filterFormId2)
+          .map(c => c.id);
+        break;
+      }
+      case 'form-of-chunk-in-section-form': {
+        const filterFormId3 = mode.scopeFilterFormId;
+        const filterSfId2 = mode.scopeFilterSectionFormId;
+        if (!filterFormId3 || !filterSfId2) return;
+        const matchingSections = new Set(
+          project.sections
+            .filter(s => s.sectionFormId === filterSfId2 && (s.status ?? 'active') === 'active')
+            .map(s => s.id)
+        );
+        sectionIds = [...matchingSections];
+        chunkIds = project.chunks
+          .filter(c => !c.isDeleted && c.formId === filterFormId3 && matchingSections.has(c.sectionId))
+          .map(c => c.id);
+        break;
+      }
+    }
+
+    // ── Phase B: Dispatch based on action type ──
+    const action = mode.action;
+    switch (action.type) {
+      case 'apply-form': {
+        if (chunkIds.length > 0) state.applyForm(chunkIds, action.formId);
+        if (sectionIds.length > 0) state.applySectionForm(sectionIds, action.formId);
+        break;
+      }
+      case 'apply-tags': {
+        if (chunkIds.length > 0) state.tagChunks(chunkIds, action.tags);
+        if (sectionIds.length > 0) state.tagSections(sectionIds, action.tags);
+        break;
+      }
+      case 'remove-tags': {
+        if (chunkIds.length > 0) state.untagChunks(chunkIds, action.tags);
+        if (sectionIds.length > 0) state.untagSections(sectionIds, action.tags);
+        break;
+      }
+      case 'reset-attribute': {
+        if (chunkIds.length > 0) state.resetChunkAttribute(chunkIds, action.attribute);
+        if (sectionIds.length > 0) state.resetSectionAttribute(sectionIds, action.attribute);
+        break;
+      }
+    }
+  },
+
+  resetChunkAttribute: (ids, attribute) => {
+    if (ids.length === 0) return;
+    get().pushUndo('apply-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        chunks: s.project.chunks.map((c) => {
+          if (!ids.includes(c.id)) return c;
+          switch (attribute) {
+            case 'form':
+            case 'shape':
+              return { ...c, formId: null, color: null, style: null };
+            case 'color':
+              return { ...c, color: null, style: c.style ? { ...c.style, color: '#D1D5DB', gradient: null } : null };
+            case 'tags':
+              return { ...c, tags: [] };
+            case 'section-form':
+              return c; // no-op for chunks
+          }
+        }),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  resetSectionAttribute: (ids, attribute) => {
+    if (ids.length === 0) return;
+    get().pushUndo('apply-section-form');
+    set((s) => ({
+      project: {
+        ...s.project,
+        sections: s.project.sections.map((sec) => {
+          if (!ids.includes(sec.id)) return sec;
+          switch (attribute) {
+            case 'section-form':
+              return { ...sec, sectionFormId: null };
+            case 'tags':
+              return { ...sec, tags: [] };
+            case 'color':
+              return { ...sec, backgroundColor: null, backgroundStyle: null };
+            case 'form':
+            case 'shape':
+              return sec; // no-op for sections
+          }
+        }),
+        updatedAt: new Date(),
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2.5: Virtual Clipboard (Cut/Copy/Paste)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  clipboardCut: () => {
+    const state = get();
+    const selectedIds = Array.from(state.selection.selectedChunkIds);
+    if (selectedIds.length === 0) return;
+
+    const chunks = state.project.chunks.filter(c => selectedIds.includes(c.id) && !c.isDeleted);
+    if (chunks.length === 0) return;
+
+    set({
+      clipboard: {
+        chunks: chunks.map(c => ({ ...c })),
+        sourceSectionId: chunks[0].sectionId,
+        mode: 'cut',
+      },
+    });
+  },
+
+  clipboardCopy: () => {
+    const state = get();
+    const selectedIds = Array.from(state.selection.selectedChunkIds);
+    if (selectedIds.length === 0) return;
+
+    const chunks = state.project.chunks.filter(c => selectedIds.includes(c.id) && !c.isDeleted);
+    if (chunks.length === 0) return;
+
+    set({
+      clipboard: {
+        chunks: chunks.map(c => ({ ...c })),
+        sourceSectionId: chunks[0].sectionId,
+        mode: 'copy',
+      },
+    });
+  },
+
+  clipboardPaste: () => {
+    const state = get();
+    const { clipboard, playback, project } = state;
+    if (!clipboard.mode || clipboard.chunks.length === 0) return;
+
+    // Determine target section: insertion point section, or current chunk's section, or first section
+    const targetSectionId =
+      playback.insertionPoint?.sectionId ??
+      (playback.currentChunkId
+        ? project.chunks.find(c => c.id === playback.currentChunkId)?.sectionId
+        : null) ??
+      project.sections.find(s => (s.status ?? 'active') === 'active')?.id;
+    if (!targetSectionId) return;
+
+    // Determine insertion order index
+    const existingInSection = project.chunks
+      .filter(c => c.sectionId === targetSectionId && !c.isDeleted)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    let insertAt = playback.insertionPoint?.orderIndex ?? existingInSection.length;
+
+    state.pushUndo('move');
+
+    if (clipboard.mode === 'cut') {
+      // Move: delete originals, insert at target
+      const origIds = clipboard.chunks.map(c => c.id);
+      set((s) => {
+        // Remove originals
+        let updatedChunks = s.project.chunks.map(c =>
+          origIds.includes(c.id) ? { ...c, isDeleted: true } : c
+        );
+        // Bump existing chunks at target to make room
+        updatedChunks = updatedChunks.map(c =>
+          c.sectionId === targetSectionId && !c.isDeleted && c.orderIndex >= insertAt
+            ? { ...c, orderIndex: c.orderIndex + clipboard.chunks.length }
+            : c
+        );
+        // Insert clipboard chunks at target
+        const pasted = clipboard.chunks.map((c, i) => ({
+          ...c,
+          id: uuid(),
+          sectionId: targetSectionId,
+          orderIndex: insertAt + i,
+          waveformData: null,
+        }));
+        return {
+          project: {
+            ...s.project,
+            chunks: [...updatedChunks, ...pasted],
+            updatedAt: new Date(),
+          },
+          clipboard: { chunks: [], sourceSectionId: null, mode: null },
+          selection: {
+            ...s.selection,
+            selectedChunkIds: new Set(pasted.map(c => c.id)),
+            anchorChunkId: pasted[0]?.id ?? null,
+          },
+        };
+      });
+    } else {
+      // Copy: duplicate at target
+      set((s) => {
+        let updatedChunks = s.project.chunks.map(c =>
+          c.sectionId === targetSectionId && !c.isDeleted && c.orderIndex >= insertAt
+            ? { ...c, orderIndex: c.orderIndex + clipboard.chunks.length }
+            : c
+        );
+        const pasted = clipboard.chunks.map((c, i) => ({
+          ...c,
+          id: uuid(),
+          sectionId: targetSectionId,
+          orderIndex: insertAt + i,
+          waveformData: null,
+        }));
+        return {
+          project: {
+            ...s.project,
+            chunks: [...updatedChunks, ...pasted],
+            updatedAt: new Date(),
+          },
+          selection: {
+            ...s.selection,
+            selectedChunkIds: new Set(pasted.map(c => c.id)),
+            anchorChunkId: pasted[0]?.id ?? null,
+          },
+        };
+      });
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 2.5: Drag-and-Drop Chunk Reorder
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  moveChunksToPosition: (chunkIds, targetSectionId, targetOrderIndex) => {
+    if (chunkIds.length === 0) return;
+    const state = get();
+    const movedSet = new Set(chunkIds);
+
+    state.pushUndo('move');
+
+    set((s) => {
+      const chunks = [...s.project.chunks];
+
+      // Gather chunks being moved (preserve order)
+      const moved = chunks
+        .filter(c => movedSet.has(c.id) && !c.isDeleted)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+      if (moved.length === 0) return s;
+
+      // Track source sections for renumbering
+      const sourceSections = new Set(moved.map(c => c.sectionId));
+
+      // Remove moved chunks from their current positions
+      const remaining = chunks.map(c =>
+        movedSet.has(c.id) ? { ...c, sectionId: '__moving__' } : c
+      );
+
+      // Bump target section chunks at/after insert position
+      const updated = remaining.map(c =>
+        c.sectionId === targetSectionId && !c.isDeleted && c.orderIndex >= targetOrderIndex
+          ? { ...c, orderIndex: c.orderIndex + moved.length }
+          : c
+      );
+
+      // Place moved chunks at target
+      const finalChunks = updated.map(c => {
+        if (c.sectionId === '__moving__') {
+          const movedIdx = moved.findIndex(m => m.id === c.id);
+          if (movedIdx >= 0) {
+            return {
+              ...c,
+              sectionId: targetSectionId,
+              orderIndex: targetOrderIndex + movedIdx,
+            };
+          }
+        }
+        return c;
+      });
+
+      // Renumber all affected sections
+      const sectionsToRenumber = new Set([...sourceSections, targetSectionId]);
+      for (const secId of sectionsToRenumber) {
+        const secChunks = finalChunks
+          .filter(c => c.sectionId === secId && !c.isDeleted)
+          .sort((a, b) => a.orderIndex - b.orderIndex);
+        secChunks.forEach((c, i) => {
+          const idx = finalChunks.findIndex(fc => fc.id === c.id);
+          if (idx >= 0) finalChunks[idx] = { ...finalChunks[idx], orderIndex: i };
+        });
+      }
+
+      return {
+        project: { ...s.project, chunks: finalChunks, updatedAt: new Date() },
+        selection: {
+          ...s.selection,
+          selectedChunkIds: movedSet,
+          anchorChunkId: moved[0]?.id ?? null,
+        },
+      };
+    });
   },
 }));
 

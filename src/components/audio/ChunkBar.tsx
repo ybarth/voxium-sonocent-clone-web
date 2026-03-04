@@ -14,12 +14,17 @@ interface ChunkBarProps {
   chunkNumber: number;
   sectionChunkNumber: number;
   isSelected: boolean;
+  isChecked: boolean;
   isCurrent: boolean;
   cursorPosition: number; // 0-1
   modifierMode: ModifierMode;
   isFilterDimmed?: boolean;
+  isDragTarget?: boolean;
   onChunkClick: (chunkId: string, fraction: number, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, sectionId: string, orderIndex: number) => void;
+  onDragStart?: (e: React.DragEvent, chunkId: string) => void;
+  onDragOver?: (e: React.DragEvent, chunkId: string, orderIndex: number) => void;
+  onDrop?: (e: React.DragEvent, sectionId: string, orderIndex: number) => void;
 }
 
 const BASE_PX_PER_SECOND = 12;
@@ -32,17 +37,25 @@ export const ChunkBar = memo(function ChunkBar({
   chunkNumber,
   sectionChunkNumber,
   isSelected,
+  isChecked,
   isCurrent,
   cursorPosition,
   modifierMode,
   isFilterDimmed = false,
+  isDragTarget = false,
   onChunkClick,
   onContextMenu,
+  onDragStart,
+  onDragOver,
+  onDrop,
 }: ChunkBarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const settings = useProjectStore((s) => s.project.settings);
   const scheme = useProjectStore((s) => s.project.scheme);
+  const paintbrushActive = useProjectStore((s) => !!s.paintbrushMode);
+  const checkSelectionMode = useProjectStore((s) => s.checkSelectionMode);
+  const toggleCheckChunk = useProjectStore((s) => s.toggleCheckChunk);
   const classicMode = settings.classicMode;
   const visualMode = classicMode ? 'flat' as const : settings.visualMode;
   const numberDisplay = settings.chunkNumberDisplay;
@@ -188,6 +201,32 @@ export const ChunkBar = memo(function ChunkBar({
     [chunk.sectionId, chunk.orderIndex, onContextMenu]
   );
 
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', chunk.id);
+      onDragStart?.(e, chunk.id);
+    },
+    [chunk.id, onDragStart]
+  );
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      onDragOver?.(e, chunk.id, chunk.orderIndex);
+    },
+    [chunk.id, chunk.orderIndex, onDragOver]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      onDrop?.(e, chunk.sectionId, chunk.orderIndex);
+    },
+    [chunk.sectionId, chunk.orderIndex, onDrop]
+  );
+
   const numberLabel = useMemo(() => {
     switch (numberDisplay) {
       case 'section-relative': return `${sectionChunkNumber}`;
@@ -218,7 +257,7 @@ export const ChunkBar = memo(function ChunkBar({
         height: `${currentBarHeight}px`,
         borderRadius: `${2 * zoomLevel}px`,
         position: 'relative',
-        cursor: MODIFIER_MODE_META[modifierMode].cursor,
+        cursor: paintbrushActive ? 'crosshair' : MODIFIER_MODE_META[modifierMode].cursor,
         margin: `${1.5 * zoomLevel}px ${1 * zoomLevel}px`,
         display: 'inline-block',
         verticalAlign: 'top',
@@ -237,7 +276,7 @@ export const ChunkBar = memo(function ChunkBar({
         height: `${currentBarHeight}px`,
         borderRadius: shapeBorderRadius ?? defaultRadius,
         position: 'relative',
-        cursor: MODIFIER_MODE_META[modifierMode].cursor,
+        cursor: paintbrushActive ? 'crosshair' : MODIFIER_MODE_META[modifierMode].cursor,
         margin: `${2 * zoomLevel}px`,
         display: 'inline-block',
         verticalAlign: 'top',
@@ -269,7 +308,14 @@ export const ChunkBar = memo(function ChunkBar({
       ref={barRef}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
-      style={containerStyle}
+      draggable={isSelected}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      style={{
+        ...containerStyle,
+        ...(isDragTarget ? { outline: `2px solid #3B82F6`, outlineOffset: '-2px' } : {}),
+      }}
     >
       {/* Texture overlay for flat mode with rich style — handled by getCompositeCssBackground */}
 
@@ -388,6 +434,74 @@ export const ChunkBar = memo(function ChunkBar({
           }}
         >
           {duration.toFixed(1)}s
+        </div>
+      )}
+
+      {/* Checkbox — visible when check selection mode is active */}
+      {checkSelectionMode && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleCheckChunk(chunk.id);
+          }}
+          style={{
+            position: 'absolute',
+            top: `${1 * zoomLevel}px`,
+            right: `${3 * zoomLevel}px`,
+            width: `${Math.max(12, 14 * zoomLevel)}px`,
+            height: `${Math.max(12, 14 * zoomLevel)}px`,
+            borderRadius: `${2 * zoomLevel}px`,
+            border: isChecked ? '2px solid #22C55E' : '2px solid rgba(255,255,255,0.5)',
+            backgroundColor: isChecked ? '#22C55E' : 'rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            zIndex: 6,
+            transition: 'background-color 0.1s, border-color 0.1s',
+          }}
+        >
+          {isChecked && (
+            <span style={{
+              color: '#fff',
+              fontSize: `${Math.max(8, 10 * zoomLevel)}px`,
+              lineHeight: 1,
+              fontWeight: 700,
+            }}>
+              ✓
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Tag badges */}
+      {(chunk.tags ?? []).length > 0 && width > 30 * zoomLevel && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: `${1 * zoomLevel}px`,
+            left: `${3 * zoomLevel}px`,
+            display: 'flex',
+            gap: `${1 * zoomLevel}px`,
+            zIndex: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          {(chunk.tags ?? []).slice(0, 2).map(tag => (
+            <span
+              key={tag}
+              style={{
+                fontSize: `${Math.max(5, 7 * zoomLevel)}px`,
+                backgroundColor: 'rgba(0,0,0,0.4)',
+                color: '#e0e0e0',
+                borderRadius: `${2 * zoomLevel}px`,
+                padding: `0 ${2 * zoomLevel}px`,
+                lineHeight: 1.4,
+              }}
+            >
+              {tag}
+            </span>
+          ))}
         </div>
       )}
     </div>

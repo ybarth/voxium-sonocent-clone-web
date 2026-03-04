@@ -95,13 +95,14 @@ export type ChunkNumberPresetId = 'default' | 'badge' | 'monospace' | 'minimal' 
 
 // ─── Filter types ────────────────────────────────────────────────────────────
 
-export type FilterCriterionType = 'color' | 'texture' | 'combo' | 'form';
+export type FilterCriterionType = 'color' | 'texture' | 'combo' | 'form' | 'tag';
 
 export interface FilterCriteria {
   type: FilterCriterionType;
   colorHex?: string;
   textureId?: BuiltinTextureId;
   formId?: string; // Phase 3: filter by form
+  tag?: string;    // Phase 2: filter by tag
 }
 
 export interface FilterState {
@@ -153,6 +154,7 @@ export interface Project {
   // Phase 4: Project Schemes
   projectScheme: ProjectScheme | null;    // null = independent mode
   projectSchemes: ProjectScheme[];
+  tagLibrary: string[];      // Phase 2: all available tags
   undoStack: UndoAction[];
   redoStack: UndoAction[];
 }
@@ -176,6 +178,7 @@ export interface Chunk {
   color: string | null;
   style: ChunkStyle | null; // Phase 2: overrides color when non-null
   formId: string | null;    // Phase 3: form from active scheme
+  tags: string[];           // Phase 2: custom user tags
   isDeleted: boolean;
   waveformData: number[] | null; // Pre-computed peak data for rendering
 }
@@ -191,6 +194,7 @@ export interface Section {
   depth: number; // 0 = top-level, 1 = subsection (max depth: 1)
   status: 'active' | 'removed' | 'trashed';
   sectionFormId: string | null; // Phase 3: section form from active section scheme
+  tags: string[];               // Phase 2: custom user tags
 }
 
 export interface ColorKey {
@@ -272,7 +276,10 @@ export type UndoActionType =
   | 'change-section-scheme'
   | 'update-section-form'
   // Phase 4: Project Schemes
-  | 'change-project-scheme';
+  | 'change-project-scheme'
+  // Phase 2: Tags
+  | 'tag-chunks'
+  | 'tag-sections';
 
 export interface UndoAction {
   type: UndoActionType;

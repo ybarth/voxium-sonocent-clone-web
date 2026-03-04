@@ -25,6 +25,11 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
   const chunks = useProjectStore((s) => s.project.chunks);
   const cm = useProjectStore((s) => s.project.settings.classicMode);
+  const clipboardCut = useProjectStore((s) => s.clipboardCut);
+  const clipboardCopy = useProjectStore((s) => s.clipboardCopy);
+  const clipboardPaste = useProjectStore((s) => s.clipboardPaste);
+  const clipboardMode = useProjectStore((s) => s.clipboard.mode);
+  const deleteChunks = useProjectStore((s) => s.deleteChunks);
 
   const showMoveTake = take.chunkIds.length > 0 && !isRecording;
 
@@ -135,6 +140,39 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
         );
       })()}
 
+      {/* Cut / Copy / Paste / Delete */}
+      {selectedChunkIds.size > 0 && (
+        <CtxMenuItem
+          label={`Cut (${selectedChunkIds.size} chunk${selectedChunkIds.size !== 1 ? 's' : ''})`}
+          shortcut="Ctrl+X"
+          onClick={() => { clipboardCut(); onClose(); }}
+        />
+      )}
+      {selectedChunkIds.size > 0 && (
+        <CtxMenuItem
+          label={`Copy (${selectedChunkIds.size} chunk${selectedChunkIds.size !== 1 ? 's' : ''})`}
+          shortcut="Ctrl+C"
+          onClick={() => { clipboardCopy(); onClose(); }}
+        />
+      )}
+      {clipboardMode && (
+        <CtxMenuItem
+          label="Paste"
+          shortcut="Ctrl+V"
+          onClick={() => { clipboardPaste(); onClose(); }}
+        />
+      )}
+      {selectedChunkIds.size > 0 && (
+        <CtxMenuItem
+          label={`Delete (${selectedChunkIds.size} chunk${selectedChunkIds.size !== 1 ? 's' : ''})`}
+          shortcut="Del"
+          danger
+          onClick={() => { deleteChunks(Array.from(selectedChunkIds)); onClose(); }}
+        />
+      )}
+
+      {(selectedChunkIds.size > 0 || clipboardMode) && <CtxMenuDivider />}
+
       <CtxMenuItem label="Import as Section(s) Here" onClick={handleImportAsSections} />
       <CtxMenuItem label="Import as Subsection(s)" onClick={handleImportAsSubsections} />
 
@@ -150,26 +188,33 @@ export function ContextMenu({ x, y, sectionId, orderIndex, onClose, onEditStyle 
   );
 }
 
-function CtxMenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+function CtxMenuItem({ label, onClick, shortcut, danger }: { label: string; onClick: () => void; shortcut?: string; danger?: boolean }) {
   const cm = useProjectStore((s) => s.project.settings.classicMode);
   return (
     <button
       onClick={onClick}
       style={{
-        display: 'block',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         width: '100%',
         padding: '6px 14px',
         background: 'none',
         border: 'none',
-        color: cm ? '#2a2a3a' : '#e0e0e0',
+        color: danger ? '#f87171' : cm ? '#2a2a3a' : '#e0e0e0',
         fontSize: '12px',
         textAlign: 'left',
         cursor: 'pointer',
       }}
-      onMouseEnter={(e) => { (e.target as HTMLElement).style.backgroundColor = cm ? '#e8e9ec' : '#2a2a3e'; }}
-      onMouseLeave={(e) => { (e.target as HTMLElement).style.backgroundColor = 'transparent'; }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = cm ? '#e8e9ec' : '#2a2a3e'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
     >
-      {label}
+      <span>{label}</span>
+      {shortcut && (
+        <span style={{ fontSize: '10px', color: cm ? '#9ca0a8' : '#606070', marginLeft: '16px' }}>
+          {shortcut}
+        </span>
+      )}
     </button>
   );
 }

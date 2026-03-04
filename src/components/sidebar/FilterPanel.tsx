@@ -3,7 +3,7 @@ import { ChevronRight, ChevronDown, Filter } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import type { FilterCriteria } from '../../types';
 
-type FilterTab = 'color' | 'form';
+type FilterTab = 'color' | 'form' | 'tag';
 
 export function FilterPanel() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -12,6 +12,7 @@ export function FilterPanel() {
 
   const colorKey = useProjectStore((s) => s.project.colorKey);
   const scheme = useProjectStore((s) => s.project.scheme);
+  const tagLibrary = useProjectStore((s) => s.project.tagLibrary ?? []);
   const filter = useProjectStore((s) => s.project.settings.filter);
   const chunks = useProjectStore((s) => s.project.chunks);
   const toggleFilterCriterion = useProjectStore((s) => s.toggleFilterCriterion);
@@ -25,7 +26,7 @@ export function FilterPanel() {
 
   const isCriterionActive = (crit: FilterCriteria) =>
     filter.criteria.some(
-      (c) => c.type === crit.type && c.colorHex === crit.colorHex && c.textureId === crit.textureId && c.formId === crit.formId
+      (c) => c.type === crit.type && c.colorHex === crit.colorHex && c.textureId === crit.textureId && c.formId === crit.formId && c.tag === crit.tag
     );
 
   return (
@@ -70,7 +71,7 @@ export function FilterPanel() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '4px' }}>
           {/* Tab toggle: Form / Color */}
           <div style={{ display: 'flex', gap: '2px', marginBottom: '4px' }}>
-            {(['form', 'color'] as FilterTab[]).map((tab) => (
+            {(['form', 'color', 'tag'] as FilterTab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setFilterTab(tab)}
@@ -162,6 +163,47 @@ export function FilterPanel() {
               </label>
             );
           })}
+
+          {/* Tag checkboxes */}
+          {filterTab === 'tag' && tagLibrary.map((tag) => {
+            const criterion: FilterCriteria = { type: 'tag', tag };
+            const active = isCriterionActive(criterion);
+            return (
+              <label
+                key={tag}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '11px',
+                  color: '#a0a0b0',
+                  cursor: 'pointer',
+                  padding: '2px 0',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={() => toggleFilterCriterion(criterion)}
+                  style={{ accentColor: '#3B82F6' }}
+                />
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  backgroundColor: 'rgba(59,130,246,0.1)',
+                  border: '1px solid rgba(59,130,246,0.2)',
+                  borderRadius: '3px', padding: '0 5px', fontSize: '10px',
+                }}>
+                  {tag}
+                </span>
+              </label>
+            );
+          })}
+
+          {filterTab === 'tag' && tagLibrary.length === 0 && (
+            <div style={{ fontSize: '10px', color: '#606070', fontStyle: 'italic' }}>
+              No tags. Create tags in the Tags panel.
+            </div>
+          )}
 
           {/* Match count */}
           {filter.active && (

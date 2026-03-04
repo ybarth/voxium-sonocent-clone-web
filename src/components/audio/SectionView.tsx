@@ -55,6 +55,7 @@ export function SectionView({
   const inputRef = useRef<HTMLInputElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const selectedChunkIds = useProjectStore((s) => s.selection.selectedChunkIds);
+  const checkedChunkIds = useProjectStore((s) => s.checkedChunkIds);
   const filterState = useProjectStore((s) => s.project.settings.filter);
   const getFilteredChunkIds = useProjectStore((s) => s.getFilteredChunkIds);
   const isSectionSelected = useProjectStore((s) => s.selection.selectedSectionIds.has(section.id));
@@ -70,6 +71,14 @@ export function SectionView({
   const sectionScheme = useProjectStore((s) => s.project.sectionScheme);
   const allSections = useProjectStore((s) => s.project.sections);
   const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+  const moveChunksToPosition = useProjectStore((s) => s.moveChunksToPosition);
+  const paintbrushActive = useProjectStore((s) => !!s.paintbrushMode);
+  const checkSelectionMode = useProjectStore((s) => s.checkSelectionMode);
+  const isSectionChecked = useProjectStore((s) => s.checkedSectionIds.has(section.id));
+  const toggleCheckSection = useProjectStore((s) => s.toggleCheckSection);
+
+  const [chunkDragOverId, setChunkDragOverId] = useState<string | null>(null);
+  const [chunkDragOverOrder, setChunkDragOverOrder] = useState<number>(-1);
 
   const canCollapse = hasChildren || chunks.length > 0;
 
@@ -77,6 +86,11 @@ export function SectionView({
     // Only handle selection if clicking the header background, not buttons/inputs
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('input')) return;
+
+    if (useProjectStore.getState().paintbrushMode) {
+      useProjectStore.getState().applyPaintbrush(section.id, 'section');
+      return;
+    }
 
     const mode = e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : 'replace';
     selectSection(section.id, mode);
@@ -118,6 +132,60 @@ export function SectionView({
       onContextMenu(e, sectionId, orderIndex);
     },
     [onContextMenu]
+  );
+
+  const handleChunkDragStart = useCallback(
+    (_e: React.DragEvent, _chunkId: string) => {
+      // Selection is already set by click — just allow drag
+    },
+    []
+  );
+
+  const handleChunkDragOver = useCallback(
+    (e: React.DragEvent, chunkId: string, orderIndex: number) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setChunkDragOverId(chunkId);
+      setChunkDragOverOrder(orderIndex);
+    },
+    []
+  );
+
+  const handleChunkDrop = useCallback(
+    (e: React.DragEvent, targetSectionId: string, targetOrderIndex: number) => {
+      e.preventDefault();
+      setChunkDragOverId(null);
+      setChunkDragOverOrder(-1);
+      const state = useProjectStore.getState();
+      const draggedIds = Array.from(state.selection.selectedChunkIds);
+      if (draggedIds.length > 0) {
+        moveChunksToPosition(draggedIds, targetSectionId, targetOrderIndex);
+      }
+    },
+    [moveChunksToPosition]
+  );
+
+  // Handle drop on empty area of section (append to end)
+  const handleSectionDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setChunkDragOverId(null);
+      setChunkDragOverOrder(-1);
+      const state = useProjectStore.getState();
+      const draggedIds = Array.from(state.selection.selectedChunkIds);
+      if (draggedIds.length > 0) {
+        moveChunksToPosition(draggedIds, section.id, chunks.length);
+      }
+    },
+    [moveChunksToPosition, section.id, chunks.length]
+  );
+
+  const handleChunkDropZoneDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    },
+    []
   );
 
   const handleMenuToggle = useCallback((e: React.MouseEvent) => {
@@ -243,7 +311,7 @@ export function SectionView({
             gap: '4px',
             borderBottom: cHeaderBorder,
             backgroundColor: cHeader,
-            cursor: 'grab',
+            cursor: paintbrushActive ? 'crosshair' : 'grab',
           }}
           onDoubleClick={handleDoubleClick}
         >
@@ -251,6 +319,35 @@ export function SectionView({
           <div style={{ color: cGripColor, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <GripVertical size={12} />
           </div>
+
+          {/* Section checkbox — visible when check selection mode is active */}
+          {checkSelectionMode && (
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCheckSection(section.id);
+              }}
+              style={{
+                width: '14px',
+                height: '14px',
+                borderRadius: '3px',
+                border: isSectionChecked ? '2px solid #22C55E' : `2px solid ${classicMode ? '#b8bcc4' : 'rgba(255,255,255,0.4)'}`,
+                backgroundColor: isSectionChecked ? '#22C55E' : (classicMode ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.3)'),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+                transition: 'background-color 0.1s, border-color 0.1s',
+              }}
+            >
+              {isSectionChecked && (
+                <span style={{ color: '#fff', fontSize: '10px', lineHeight: 1, fontWeight: 700 }}>
+                  ✓
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Collapse/expand chevron */}
           {canCollapse ? (
@@ -370,6 +467,9 @@ export function SectionView({
           <div
             onClick={handleEmptySpaceClick}
             onContextMenu={handleFlowContextMenu}
+            onDragOver={handleChunkDropZoneDragOver}
+            onDrop={handleSectionDrop}
+            onDragLeave={() => { setChunkDragOverId(null); setChunkDragOverOrder(-1); }}
             style={{
               padding: classicMode ? '3px 4px' : '4px 6px',
               display: 'flex',
@@ -414,12 +514,17 @@ export function SectionView({
                     chunkNumber={globalChunkOffset + idx + 1}
                     sectionChunkNumber={idx + 1}
                     isSelected={selectedChunkIds.has(chunk.id)}
+                    isChecked={checkedChunkIds.has(chunk.id)}
                     isCurrent={chunk.id === currentChunkId}
                     cursorPosition={chunk.id === currentChunkId ? cursorPosition : 0}
                     modifierMode={modifierMode}
                     isFilterDimmed={filterState.active && filterState.criteria.length > 0 && !getFilteredChunkIds().has(chunk.id)}
+                    isDragTarget={chunkDragOverId === chunk.id}
                     onChunkClick={onChunkClick}
                     onContextMenu={handleChunkContextMenu}
+                    onDragStart={handleChunkDragStart}
+                    onDragOver={handleChunkDragOver}
+                    onDrop={handleChunkDrop}
                   />
                 </InsertionWrapper>
               ))

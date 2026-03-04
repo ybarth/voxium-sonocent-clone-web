@@ -71,6 +71,10 @@ export function AudioPane() {
 
   const handleChunkClick = useCallback(
     (chunkId: string, fraction: number, e: React.MouseEvent) => {
+      if (useProjectStore.getState().paintbrushMode) {
+        useProjectStore.getState().applyPaintbrush(chunkId, 'chunk');
+        return;
+      }
       const mode = e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : 'replace';
       selectChunk(chunkId, mode);
       placeCursorInChunk(chunkId, fraction);

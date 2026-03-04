@@ -12,6 +12,12 @@ import { getApiKey, setApiKey, clearApiKey, hasApiKey } from '../../utils/aiGene
 import {
   getElevenLabsApiKey, setElevenLabsApiKey, clearElevenLabsApiKey, hasElevenLabsApiKey,
 } from '../../utils/elevenLabsApi';
+import { getProviderKey, setProviderKey, clearProviderKey, getClaudeKey, getGeminiKey } from '../../utils/aiProvider';
+import type { TaskCategory } from '../../utils/aiProvider';
+import { aiRouter } from '../../utils/aiRouter';
+import type { RoutingRule } from '../../utils/aiRouter';
+import { CouncilPanel } from '../forge/CouncilPanel';
+import { AIUsageDashboard } from './AIUsageDashboard';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -26,7 +32,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const getResolvedBindings = useKeybindingStore(s => s.getResolvedBindings);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<CommandCategory>>(new Set());
-  const [activeTab, setActiveTab] = useState<'keybindings' | 'general'>('keybindings');
+  const [activeTab, setActiveTab] = useState<'keybindings' | 'general' | 'ai-routing' | 'ai-usage'>('keybindings');
 
   const resolved = getResolvedBindings();
   const conflicts = getConflicts();
@@ -133,6 +139,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             label="General"
             active={activeTab === 'general'}
             onClick={() => setActiveTab('general')}
+          />
+          <TabButton
+            label="AI Routing"
+            active={activeTab === 'ai-routing'}
+            onClick={() => setActiveTab('ai-routing')}
+          />
+          <TabButton
+            label="AI Usage"
+            active={activeTab === 'ai-usage'}
+            onClick={() => setActiveTab('ai-usage')}
           />
         </div>
 
@@ -259,6 +275,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           {activeTab === 'general' && (
             <GeneralSettings />
           )}
+          {activeTab === 'ai-routing' && (
+            <AIRoutingSettings />
+          )}
+          {activeTab === 'ai-usage' && (
+            <AIUsageDashboard />
+          )}
         </div>
       </div>
     </div>
@@ -280,6 +302,10 @@ function GeneralSettings() {
   const [hasKey, setHasKey] = useState(hasApiKey());
   const [elApiKeyInput, setElApiKeyInput] = useState('');
   const [hasElKey, setHasElKey] = useState(hasElevenLabsApiKey());
+  const [claudeKeyInput, setClaudeKeyInput] = useState('');
+  const [hasClaudeKey, setHasClaudeKey] = useState(!!getClaudeKey());
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [hasGeminiKey, setHasGeminiKey] = useState(!!getGeminiKey());
 
   useEffect(() => {
     const tts = new TtsEngine();
@@ -573,6 +599,106 @@ function GeneralSettings() {
         </div>
       </div>
 
+      {/* Claude (Anthropic) API Key */}
+      <div style={settingRowStyle}>
+        <div>
+          <div style={{ fontSize: '13px', color: '#e0e0e0', fontWeight: 500 }}>
+            Anthropic (Claude) API Key
+          </div>
+          <div style={{ fontSize: '11px', color: '#505060', marginTop: '2px' }}>
+            Optional — enables Claude as an AI provider for generation tasks
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {hasClaudeKey ? (
+            <>
+              <span style={{ fontSize: '11px', color: '#22C55E' }}>Configured</span>
+              <button
+                onClick={() => { clearProviderKey('claude'); setHasClaudeKey(false); }}
+                style={{ ...previewBtnStyle, color: '#EF4444', borderColor: 'rgba(239,68,68,0.3)' }}
+              >
+                Clear
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                type="password"
+                value={claudeKeyInput}
+                onChange={(e) => setClaudeKeyInput(e.target.value)}
+                placeholder="sk-ant-..."
+                style={{
+                  background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: '6px',
+                  color: '#e0e0e0', padding: '4px 8px', fontSize: '12px', width: '180px', outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (claudeKeyInput.trim()) {
+                    setProviderKey('claude', claudeKeyInput.trim());
+                    setHasClaudeKey(true);
+                    setClaudeKeyInput('');
+                  }
+                }}
+                style={previewBtnStyle}
+              >
+                Save
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Google (Gemini) API Key */}
+      <div style={settingRowStyle}>
+        <div>
+          <div style={{ fontSize: '13px', color: '#e0e0e0', fontWeight: 500 }}>
+            Google AI (Gemini) API Key
+          </div>
+          <div style={{ fontSize: '11px', color: '#505060', marginTop: '2px' }}>
+            Optional — enables Gemini as an AI provider for generation tasks
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {hasGeminiKey ? (
+            <>
+              <span style={{ fontSize: '11px', color: '#22C55E' }}>Configured</span>
+              <button
+                onClick={() => { clearProviderKey('gemini'); setHasGeminiKey(false); }}
+                style={{ ...previewBtnStyle, color: '#EF4444', borderColor: 'rgba(239,68,68,0.3)' }}
+              >
+                Clear
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                type="password"
+                value={geminiKeyInput}
+                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                placeholder="AIza..."
+                style={{
+                  background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: '6px',
+                  color: '#e0e0e0', padding: '4px 8px', fontSize: '12px', width: '180px', outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (geminiKeyInput.trim()) {
+                    setProviderKey('gemini', geminiKeyInput.trim());
+                    setHasGeminiKey(true);
+                    setGeminiKeyInput('');
+                  }
+                }}
+                style={previewBtnStyle}
+              >
+                Save
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* ── Default Attributes ── */}
       <SectionHeader>Default Attributes</SectionHeader>
 
@@ -809,5 +935,225 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
     >
       {label}
     </button>
+  );
+}
+
+const TASK_LABELS: Record<string, string> = {
+  'color-generation': 'Color Generation',
+  'scheme-generation': 'Scheme Generation',
+  'section-scheme-generation': 'Section Scheme Generation',
+  'form-attribute-generation': 'Form Attribute Suggestion',
+  'gradient-generation': 'Gradient Generation',
+  'texture-generation': 'Texture Generation (Image)',
+  'texture-reference': 'Texture Reference (Vision)',
+  'general-chat': 'General Chat / Judge',
+};
+
+function AIRoutingSettings() {
+  const [rules, setRules] = useState<RoutingRule[]>(() => [...aiRouter.getConfig().rules]);
+  const [budgetMode, setBudgetMode] = useState(() => aiRouter.getConfig().preferBudget);
+  const [panelEnabled, setPanelEnabled] = useState(() => aiRouter.getConfig().panelEnabled);
+  const allModels = aiRouter.getAllModels();
+  const configuredProviders = aiRouter.getConfiguredProviders();
+
+  // Build provider→models map
+  const providerModels: Record<string, { id: string; displayName: string }[]> = {};
+  for (const m of allModels) {
+    if (!providerModels[m.provider]) providerModels[m.provider] = [];
+    providerModels[m.provider].push({ id: m.id, displayName: m.displayName });
+  }
+
+  const handleRuleChange = (
+    taskCategory: TaskCategory,
+    field: 'primaryProvider' | 'primaryModel' | 'fallbackProvider' | 'fallbackModel',
+    value: string,
+  ) => {
+    const updated = rules.map(r => {
+      if (r.taskCategory !== taskCategory) return r;
+      const newRule = { ...r, [field]: value };
+      // When changing provider, auto-select first model of that provider
+      if (field === 'primaryProvider') {
+        const models = providerModels[value];
+        newRule.primaryModel = models?.[0]?.id ?? '';
+      }
+      if (field === 'fallbackProvider') {
+        if (value === '') {
+          newRule.fallbackModel = undefined;
+          newRule.fallbackProvider = undefined;
+        } else {
+          const models = providerModels[value];
+          newRule.fallbackModel = models?.[0]?.id ?? '';
+        }
+      }
+      return newRule;
+    });
+    setRules(updated);
+    // Apply to router
+    const changedRule = updated.find(r => r.taskCategory === taskCategory);
+    if (changedRule) aiRouter.updateRule(taskCategory, changedRule);
+  };
+
+  const handleBudgetToggle = () => {
+    const next = !budgetMode;
+    setBudgetMode(next);
+    aiRouter.updateConfig({ preferBudget: next });
+  };
+
+  const handlePanelToggle = () => {
+    const next = !panelEnabled;
+    setPanelEnabled(next);
+    aiRouter.updateConfig({ panelEnabled: next });
+  };
+
+  const selectStyle: React.CSSProperties = {
+    background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: '4px',
+    color: '#c0c0d0', fontSize: '11px', padding: '3px 6px', outline: 'none',
+    cursor: 'pointer',
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Global toggles */}
+      <SectionHeader>Global AI Settings</SectionHeader>
+
+      <div style={settingRowStyle}>
+        <div>
+          <div style={{ fontSize: '13px', color: '#e0e0e0', fontWeight: 500 }}>Budget Mode</div>
+          <div style={{ fontSize: '11px', color: '#505060', marginTop: '2px' }}>
+            Always use the cheapest capable model for each task
+          </div>
+        </div>
+        <button
+          onClick={handleBudgetToggle}
+          style={{
+            width: '40px', height: '22px', borderRadius: '11px', border: 'none',
+            backgroundColor: budgetMode ? '#3B82F6' : '#2a2a3e', cursor: 'pointer',
+            position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
+          }}
+        >
+          <div style={{
+            width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#e0e0e0',
+            position: 'absolute', top: '3px', left: budgetMode ? '21px' : '3px', transition: 'left 0.2s',
+          }} />
+        </button>
+      </div>
+
+      <div style={settingRowStyle}>
+        <div>
+          <div style={{ fontSize: '13px', color: '#e0e0e0', fontWeight: 500 }}>Panel (Council) Mode</div>
+          <div style={{ fontSize: '11px', color: '#505060', marginTop: '2px' }}>
+            Dispatch high-stakes tasks to multiple models and compare
+          </div>
+        </div>
+        <button
+          onClick={handlePanelToggle}
+          style={{
+            width: '40px', height: '22px', borderRadius: '11px', border: 'none',
+            backgroundColor: panelEnabled ? '#3B82F6' : '#2a2a3e', cursor: 'pointer',
+            position: 'relative', transition: 'background-color 0.2s', flexShrink: 0,
+          }}
+        >
+          <div style={{
+            width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#e0e0e0',
+            position: 'absolute', top: '3px', left: panelEnabled ? '21px' : '3px', transition: 'left 0.2s',
+          }} />
+        </button>
+      </div>
+
+      <div style={{ fontSize: '10px', color: '#505060', padding: '0 4px' }}>
+        Configured providers: {configuredProviders.length > 0
+          ? configuredProviders.map(p => p.name).join(', ')
+          : 'None — add API keys in the General tab'}
+      </div>
+
+      {/* Task routing table */}
+      <SectionHeader>Task Routing</SectionHeader>
+      <div style={{ fontSize: '11px', color: '#606070', marginBottom: '4px' }}>
+        Choose which AI provider and model handles each generation task.
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {rules.filter(r => TASK_LABELS[r.taskCategory]).map(rule => (
+          <div key={rule.taskCategory} style={{
+            padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px',
+            border: '1px solid #1a1a2e',
+          }}>
+            <div style={{ fontSize: '12px', color: '#c0c0d0', fontWeight: 600, marginBottom: '6px' }}>
+              {TASK_LABELS[rule.taskCategory]}
+            </div>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Primary */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '10px', color: '#606070', minWidth: '46px' }}>Primary:</span>
+                <select
+                  value={rule.primaryProvider}
+                  onChange={(e) => handleRuleChange(rule.taskCategory, 'primaryProvider', e.target.value)}
+                  style={selectStyle}
+                >
+                  {Object.keys(providerModels).map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <select
+                  value={rule.primaryModel}
+                  onChange={(e) => handleRuleChange(rule.taskCategory, 'primaryModel', e.target.value)}
+                  style={selectStyle}
+                >
+                  {(providerModels[rule.primaryProvider] ?? []).map(m => (
+                    <option key={m.id} value={m.id}>{m.displayName}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Fallback */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '10px', color: '#606070', minWidth: '46px' }}>Fallback:</span>
+                <select
+                  value={rule.fallbackProvider ?? ''}
+                  onChange={(e) => handleRuleChange(rule.taskCategory, 'fallbackProvider', e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="">None</option>
+                  {Object.keys(providerModels).map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                {rule.fallbackProvider && (
+                  <select
+                    value={rule.fallbackModel ?? ''}
+                    onChange={(e) => handleRuleChange(rule.taskCategory, 'fallbackModel', e.target.value)}
+                    style={selectStyle}
+                  >
+                    {(providerModels[rule.fallbackProvider] ?? []).map(m => (
+                      <option key={m.id} value={m.id}>{m.displayName}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Council Panel */}
+      <SectionHeader>AI Council — Test Panel</SectionHeader>
+      <div style={{ fontSize: '11px', color: '#606070', marginBottom: '4px' }}>
+        Dispatch a test prompt to multiple models side-by-side and compare responses.
+      </div>
+      <CouncilPanel
+        request={{
+          messages: [
+            { role: 'system', content: 'You are a creative color palette generator. Return ONLY a JSON array of 5 hex color codes.' },
+            { role: 'user', content: 'Generate a versatile, modern color palette' },
+          ],
+          temperature: 0.7,
+          maxTokens: 100,
+        }}
+        taskDescription="Test: compare model responses for color generation"
+        onSelect={(content) => {
+          console.log('Council selected:', content);
+        }}
+      />
+    </div>
   );
 }

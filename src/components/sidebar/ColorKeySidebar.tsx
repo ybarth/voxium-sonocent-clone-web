@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { DEFAULT_CHUNK_COLOR } from '../../types';
 import { getFlatSectionOrder } from '../../utils/sectionTree';
 import { FilterPanel } from './FilterPanel';
+import { TagManager } from './TagManager';
 import { SfxConfigPanel } from './SfxConfigPanel';
 import { TemplateManager } from './TemplateManager';
 import { StyleEditor } from '../color/StyleEditor';
@@ -107,6 +108,9 @@ export function ColorKeySidebar() {
 
       {/* ── Filter Panel ── */}
       <FilterPanel />
+
+      {/* ── Tag Manager ── */}
+      <TagManager />
 
       {/* ── SFX Config ── */}
       <SfxConfigPanel />

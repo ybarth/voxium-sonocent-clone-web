@@ -12,6 +12,7 @@ import { FormEditor } from './FormEditor';
 import { SectionFormRow } from './SectionFormRow';
 import { SectionFormEditor } from './SectionFormEditor';
 import { FilterPanel } from './FilterPanel';
+import { TagManager } from './TagManager';
 import { SchemeManager } from './SchemeManager';
 import { getFlatSectionOrder } from '../../utils/sectionTree';
 
@@ -265,6 +266,9 @@ export function SchemeSidebar() {
 
       {/* Filter Panel */}
       <FilterPanel />
+
+      {/* Tag Manager */}
+      <TagManager />
 
       {/* Scheme Manager */}
       <SchemeManager />

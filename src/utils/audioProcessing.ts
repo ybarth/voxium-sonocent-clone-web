@@ -115,6 +115,7 @@ export function segmentAudio(
         color: null,
         style: null,
         formId: null,
+        tags: [],
         isDeleted: false,
         waveformData: null,
       });

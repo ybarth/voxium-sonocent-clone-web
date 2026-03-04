@@ -83,6 +83,11 @@ export const ABLETON_PRESET: KeybindingMap = {
   'color.apply7': '7', 'color.apply8': '8', 'color.apply9': '9',
   'color.clear':  '0',
 
+  // Clipboard
+  'edit.cut':  'Ctrl+X',
+  'edit.copy': 'Ctrl+C',
+  'edit.paste': 'Ctrl+V',
+
   // Settings
   'app.openSettings': 'Ctrl+,',
 };
@@ -154,6 +159,11 @@ export const PROTOOLS_PRESET: KeybindingMap = {
   'color.apply4': '4', 'color.apply5': '5', 'color.apply6': '6',
   'color.apply7': '7', 'color.apply8': '8', 'color.apply9': '9',
   'color.clear':  '0',
+
+  // Clipboard
+  'edit.cut':  'Ctrl+X',
+  'edit.copy': 'Ctrl+C',
+  'edit.paste': 'Ctrl+V',
 
   // Settings
   'app.openSettings': 'Ctrl+,',
@@ -227,6 +237,11 @@ export const LOGIC_CUBASE_PRESET: KeybindingMap = {
   'color.apply7': '7', 'color.apply8': '8', 'color.apply9': '9',
   'color.clear':  '0',
 
+  // Clipboard
+  'edit.cut':  'Ctrl+X',
+  'edit.copy': 'Ctrl+C',
+  'edit.paste': 'Ctrl+V',
+
   // Settings
   'app.openSettings': 'Ctrl+,',
 };
@@ -298,6 +313,11 @@ export const REAPER_PRESET: KeybindingMap = {
   'color.apply4': '4', 'color.apply5': '5', 'color.apply6': '6',
   'color.apply7': '7', 'color.apply8': '8', 'color.apply9': '9',
   'color.clear':  '0',
+
+  // Clipboard
+  'edit.cut':  'Ctrl+X',
+  'edit.copy': 'Ctrl+C',
+  'edit.paste': 'Ctrl+V',
 
   // Settings
   'app.openSettings': 'Ctrl+,',

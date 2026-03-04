@@ -11,7 +11,8 @@ export type CommandCategory =
   | 'view'
   | 'history'
   | 'color'
-  | 'form';
+  | 'form'
+  | 'clipboard';
 
 export interface CommandDefinition {
   id: string;
@@ -34,6 +35,7 @@ export const COMMAND_CATEGORIES: { id: CommandCategory; label: string }[] = [
   { id: 'history', label: 'History' },
   { id: 'color', label: 'Colors' },
   { id: 'form', label: 'Forms & Schemes' },
+  { id: 'clipboard', label: 'Clipboard' },
 ];
 
 export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
@@ -274,6 +276,34 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
   'scheme.switch': { id: 'scheme.switch', label: 'Switch Scheme', category: 'form', description: 'Open the scheme selector' },
   'scheme.openManager': { id: 'scheme.openManager', label: 'Scheme Manager', category: 'form', description: 'Open the scheme manager' },
   'forge.open': { id: 'forge.open', label: 'Open The Forge', category: 'form', description: 'Open the AI generation modal' },
+
+  // --- Clipboard ---
+  'edit.cut': {
+    id: 'edit.cut', label: 'Cut', category: 'clipboard',
+    description: 'Cut selected chunks to clipboard', audioPaneOnly: true, requiresSelection: true,
+  },
+  'edit.copy': {
+    id: 'edit.copy', label: 'Copy', category: 'clipboard',
+    description: 'Copy selected chunks to clipboard', audioPaneOnly: true, requiresSelection: true,
+  },
+  'edit.paste': {
+    id: 'edit.paste', label: 'Paste', category: 'clipboard',
+    description: 'Paste chunks from clipboard', audioPaneOnly: true,
+  },
+
+  // --- Selection Checkmarks ---
+  'selection.toggleCheck': {
+    id: 'selection.toggleCheck', label: 'Toggle Check', category: 'selection',
+    description: 'Toggle checkmark on the current chunk', audioPaneOnly: true,
+  },
+  'selection.checkAllSelected': {
+    id: 'selection.checkAllSelected', label: 'Check All Selected', category: 'selection',
+    description: 'Add checkmarks to all selected chunks', audioPaneOnly: true,
+  },
+  'selection.uncheckAll': {
+    id: 'selection.uncheckAll', label: 'Uncheck All', category: 'selection',
+    description: 'Remove all checkmarks', audioPaneOnly: true,
+  },
 };
 
 export type CommandId = keyof typeof COMMAND_REGISTRY;

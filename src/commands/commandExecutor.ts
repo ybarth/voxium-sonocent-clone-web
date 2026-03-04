@@ -236,6 +236,28 @@ export function executeCommand(commandId: string): boolean {
     case 'forge.open':
       return true;
 
+    // --- Clipboard ---
+    case 'edit.cut':
+      state.clipboardCut();
+      return true;
+    case 'edit.copy':
+      state.clipboardCopy();
+      return true;
+    case 'edit.paste':
+      state.clipboardPaste();
+      return true;
+
+    // --- Selection Checkmarks ---
+    case 'selection.toggleCheck':
+      if (playback.currentChunkId) state.toggleCheckChunk(playback.currentChunkId);
+      return true;
+    case 'selection.checkAllSelected':
+      state.checkAllSelected();
+      return true;
+    case 'selection.uncheckAll':
+      state.uncheckAll();
+      return true;
+
     default:
       return false;
   }

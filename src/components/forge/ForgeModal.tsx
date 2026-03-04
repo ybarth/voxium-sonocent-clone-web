@@ -98,7 +98,7 @@ export function ForgeModal({ onClose }: ForgeModalProps) {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <span style={{ fontSize: '10px', color: '#505060' }}>
-            Requires OpenAI or ElevenLabs API keys configured in Settings
+            Requires AI provider API keys configured in Settings
           </span>
           <button
             onClick={onClose}

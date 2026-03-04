@@ -1,9 +1,9 @@
 import { useRef, useCallback, useState } from 'react';
 import {
   Mic, Play, Pause, Square, SkipBack, SkipForward,
-  Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket,
+  Import, Scissors, Merge, Trash2, Plus, AudioWaveform, PaintBucket, Paintbrush,
   ZoomIn, ZoomOut, ChevronDown, Settings, MessageSquare, MessageSquareOff,
-  Undo2, Redo2, Filter, Wand2, Sun, Moon,
+  Undo2, Redo2, Filter, Wand2, Sun, Moon, CheckSquare, Copy, ClipboardPaste,
 } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlayback } from '../../hooks/usePlayback';
@@ -14,6 +14,7 @@ import { executeCommand } from '../../commands/commandExecutor';
 import { useKeybindingStore } from '../../stores/keybindingStore';
 import { Tooltip } from '../Tooltip';
 import { ForgeModal } from '../forge/ForgeModal';
+import { PaintbrushPopover } from './PaintbrushPopover';
 
 export function Toolbar() {
   const project = useProjectStore((s) => s.project);
@@ -32,6 +33,16 @@ export function Toolbar() {
   const filterCount = useProjectStore((s) => s.project.settings.filter.criteria.length);
   const clearFilter = useProjectStore((s) => s.clearFilter);
   const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+  const paintbrushMode = useProjectStore((s) => s.paintbrushMode);
+  const setPaintbrushMode = useProjectStore((s) => s.setPaintbrushMode);
+  const checkSelectionMode = useProjectStore((s) => s.checkSelectionMode);
+  const setCheckSelectionMode = useProjectStore((s) => s.setCheckSelectionMode);
+  const checkedChunkIds = useProjectStore((s) => s.checkedChunkIds);
+  const checkedSectionIds = useProjectStore((s) => s.checkedSectionIds);
+  const clipboard = useProjectStore((s) => s.clipboard);
+  const clipboardCut = useProjectStore((s) => s.clipboardCut);
+  const clipboardCopy = useProjectStore((s) => s.clipboardCopy);
+  const clipboardPaste = useProjectStore((s) => s.clipboardPaste);
 
   const showTooltips = useKeybindingStore((s) => s.showTooltips);
   const setShowTooltips = useKeybindingStore((s) => s.setShowTooltips);
@@ -43,6 +54,7 @@ export function Toolbar() {
   const [importAsSubsections, setImportAsSubsections] = useState(false);
   const [showImportDropdown, setShowImportDropdown] = useState(false);
   const [showForge, setShowForge] = useState(false);
+  const [showPaintbrushPopover, setShowPaintbrushPopover] = useState(false);
 
   const selectedIds = Array.from(selection.selectedChunkIds);
 
@@ -401,6 +413,84 @@ export function Toolbar() {
           active={true}
         />
       )}
+
+      {/* Clipboard */}
+      <ToolbarButton
+        icon={<Copy size={14} />}
+        label="Copy"
+        onClick={clipboardCopy}
+        disabled={selectedIds.length === 0}
+        commandId="edit.copy"
+      />
+      <ToolbarButton
+        icon={<ClipboardPaste size={14} />}
+        label="Paste"
+        onClick={clipboardPaste}
+        disabled={!clipboard.mode}
+        commandId="edit.paste"
+        active={!!clipboard.mode}
+      />
+
+      <Divider />
+
+      {/* Paintbrush */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <ToolbarToggle
+          icon={<Paintbrush size={14} />}
+          label={paintbrushMode ? 'Paintbrush Active' : 'Paintbrush Off'}
+          active={!!paintbrushMode}
+          onClick={() => {
+            if (paintbrushMode) {
+              setPaintbrushMode(null);
+            } else {
+              setShowPaintbrushPopover((v) => !v);
+            }
+          }}
+        />
+        <button
+          onClick={() => setShowPaintbrushPopover((v) => !v)}
+          title="Paintbrush options"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '5px 2px',
+            backgroundColor: 'transparent',
+            border: '1px solid transparent',
+            borderRadius: '5px',
+            color: classicMode ? '#808898' : '#a0a0b0',
+            cursor: 'pointer',
+            marginLeft: '-4px',
+          }}
+        >
+          <ChevronDown size={12} />
+        </button>
+        {showPaintbrushPopover && (
+          <PaintbrushPopover onClose={() => setShowPaintbrushPopover(false)} />
+        )}
+      </div>
+
+      {/* Check Selection Mode */}
+      <ToolbarToggle
+        icon={
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <CheckSquare size={14} />
+            {checkSelectionMode && (checkedChunkIds.size + checkedSectionIds.size) > 0 && (
+              <span style={{
+                position: 'absolute', top: '-4px', right: '-6px',
+                fontSize: '8px', backgroundColor: '#22C55E', color: '#fff',
+                borderRadius: '6px', padding: '0 3px', lineHeight: '12px', fontWeight: 700,
+              }}>
+                {checkedChunkIds.size + checkedSectionIds.size}
+              </span>
+            )}
+          </div>
+        }
+        label="Check Selection Mode"
+        active={checkSelectionMode}
+        onClick={() => setCheckSelectionMode(!checkSelectionMode)}
+      />
+
+      <Divider />
 
       {/* Forge */}
       <ToolbarButton

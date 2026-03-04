@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { generateColorFromText, hasApiKey } from '../../utils/aiGeneration';
 import { useProjectStore } from '../../stores/projectStore';
+import { IterationPanel } from './IterationPanel';
 
 interface ForgeColorTabProps {
   onGenerated?: () => void;
@@ -11,6 +12,7 @@ export function ForgeColorTab({ onGenerated }: ForgeColorTabProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [generatedColors, setGeneratedColors] = useState<string[]>([]);
+  const [showIteration, setShowIteration] = useState(false);
 
   const scheme = useProjectStore((s) => s.project.scheme);
   const updateFormInScheme = useProjectStore((s) => s.updateFormInScheme);
@@ -100,17 +102,72 @@ export function ForgeColorTab({ onGenerated }: ForgeColorTabProps) {
             ))}
           </div>
 
-          <button
-            onClick={handleApplyToScheme}
-            style={{
-              padding: '6px 12px', backgroundColor: 'rgba(34,197,94,0.15)',
-              border: '1px solid rgba(34,197,94,0.3)', borderRadius: '6px',
-              color: '#22C55E', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            Apply to Active Scheme
-          </button>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              onClick={handleApplyToScheme}
+              style={{
+                padding: '6px 12px', backgroundColor: 'rgba(34,197,94,0.15)',
+                border: '1px solid rgba(34,197,94,0.3)', borderRadius: '6px',
+                color: '#22C55E', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Apply to Active Scheme
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Iterate button */}
+      <button
+        onClick={() => setShowIteration(!showIteration)}
+        style={{
+          padding: '5px 10px', background: showIteration ? '#8B5CF615' : 'none',
+          border: `1px solid ${showIteration ? '#8B5CF650' : '#2a2a3e'}`,
+          borderRadius: '4px', color: showIteration ? '#8B5CF6' : '#606070',
+          fontSize: '10px', cursor: 'pointer', alignSelf: 'flex-start',
+        }}
+      >
+        {showIteration ? 'Hide Iteration Mode' : 'Iteration Mode'}
+      </button>
+
+      {showIteration && prompt.trim() && (
+        <IterationPanel
+          taskCategory="color-generation"
+          systemMessage="You are a color palette generator. Given a description, return 5 hex color codes that match the mood/theme. Return ONLY a JSON array of hex strings like [&quot;#FF0000&quot;,&quot;#00FF00&quot;]. No other text."
+          initialPrompt={prompt}
+          onAccept={(content) => {
+            try {
+              const colors = JSON.parse(content);
+              if (Array.isArray(colors)) {
+                setGeneratedColors(colors.filter((c: unknown) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c as string)));
+              }
+            } catch {
+              const matches = content.match(/#[0-9A-Fa-f]{6}/g);
+              if (matches) setGeneratedColors(matches.slice(0, 5));
+            }
+          }}
+          renderPreview={(content) => {
+            let colors: string[] = [];
+            try {
+              const parsed = JSON.parse(content);
+              if (Array.isArray(parsed)) colors = parsed.filter((c: unknown) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c as string));
+            } catch {
+              const matches = content.match(/#[0-9A-Fa-f]{6}/g);
+              if (matches) colors = matches.slice(0, 5);
+            }
+            if (colors.length === 0) return <div style={{ fontSize: '10px', color: '#808090' }}>{content.slice(0, 200)}</div>;
+            return (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {colors.map((hex, i) => (
+                  <div key={i} style={{
+                    width: '24px', height: '24px', borderRadius: '4px',
+                    backgroundColor: hex, border: '1px solid rgba(255,255,255,0.1)',
+                  }} title={hex} />
+                ))}
+              </div>
+            );
+          }}
+        />
       )}
     </div>
   );
