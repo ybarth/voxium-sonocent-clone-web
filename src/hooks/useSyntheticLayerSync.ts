@@ -8,7 +8,12 @@
 
 import { useEffect, useRef } from 'react';
 import { useProjectStore } from '../stores/projectStore';
+import type { SyntheticTtsProvider } from '../utils/syntheticTtsProvider';
+import type { SyntheticTtsEngine } from '../types';
+import { computeWaveformPeaks } from '../utils/audioProcessing';
 import { HeadTtsProvider } from '../utils/headTtsProvider';
+import { ElevenLabsTtsProvider } from '../utils/elevenLabsTtsProvider';
+import { QwenTtsProvider } from '../utils/qwenTtsProvider';
 import { initSonic } from '../utils/sonicStretcher';
 import {
   getSyntheticCache,
@@ -26,16 +31,45 @@ import type { ChunkExpressivity } from '../types/document';
 import type { TranscribedWord, WordChunkMapping } from '../types/transcription';
 
 // Module-level TTS provider singleton
-let ttsProvider: HeadTtsProvider | null = null;
+let ttsProvider: SyntheticTtsProvider | null = null;
 let providerConnecting = false;
+let currentEngineType: SyntheticTtsEngine | null = null;
 
-async function getOrCreateProvider(audioContext: AudioContext, voiceId: string, speed: number): Promise<HeadTtsProvider> {
+function createProvider(
+  engine: SyntheticTtsEngine,
+  audioContext: AudioContext,
+  voiceId: string,
+  speed: number,
+  elevenLabsModelId: string,
+): SyntheticTtsProvider {
+  switch (engine) {
+    case 'kokoro':
+      return new HeadTtsProvider(audioContext, voiceId || 'af_bella', speed);
+    case 'elevenlabs':
+      return new ElevenLabsTtsProvider(audioContext, voiceId, speed, elevenLabsModelId);
+    case 'qwen':
+      return new QwenTtsProvider(audioContext, voiceId, speed);
+  }
+}
+
+async function getOrCreateProvider(
+  engine: SyntheticTtsEngine,
+  audioContext: AudioContext,
+  voiceId: string,
+  speed: number,
+  elevenLabsModelId: string,
+): Promise<SyntheticTtsProvider> {
+  // If engine type changed, invalidate old provider
+  if (currentEngineType !== engine) {
+    ttsProvider = null;
+    currentEngineType = null;
+  }
+
   if (ttsProvider && ttsProvider.isReady()) {
     return ttsProvider;
   }
 
   if (providerConnecting) {
-    // Wait for existing connection attempt
     while (providerConnecting) {
       await new Promise(r => setTimeout(r, 100));
     }
@@ -44,15 +78,20 @@ async function getOrCreateProvider(audioContext: AudioContext, voiceId: string, 
 
   providerConnecting = true;
   try {
-    console.log('[SyntheticSync] Creating HeadTTS provider...');
-    ttsProvider = new HeadTtsProvider(audioContext, voiceId, speed);
-    await ttsProvider.connect((msg) => console.log('[HeadTTS]', msg));
-    console.log('[SyntheticSync] HeadTTS connected successfully');
-    // Also init sonic-wasm in parallel (non-blocking)
-    initSonic().catch(err => console.warn('Sonic WASM init failed (WSOLA fallback available):', err));
+    console.log(`[SyntheticSync] Creating ${engine} TTS provider...`);
+    ttsProvider = createProvider(engine, audioContext, voiceId, speed, elevenLabsModelId);
+    await ttsProvider.connect((msg) => console.log(`[${engine}]`, msg));
+    currentEngineType = engine;
+    console.log(`[SyntheticSync] ${engine} provider connected successfully`);
+
+    // Init sonic-wasm for time-stretching (non-blocking, not needed for web-speech)
+    if (engine !== 'web-speech') {
+      initSonic().catch(err => console.warn('Sonic WASM init failed (WSOLA fallback available):', err));
+    }
+
     return ttsProvider;
   } catch (err) {
-    console.error('[SyntheticSync] HeadTTS connection FAILED:', err);
+    console.error(`[SyntheticSync] ${engine} connection FAILED:`, err);
     ttsProvider = null;
     throw err;
   } finally {
@@ -119,7 +158,7 @@ export function useSyntheticLayerSync() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generatingRef = useRef(false);
 
-  // Clean up when synthetic layer is disabled
+  // Clean up when synthetic layer is disabled or engine changes
   useEffect(() => {
     if (!syntheticConfig.enabled) {
       clearSyntheticCache();
@@ -128,6 +167,17 @@ export function useSyntheticLayerSync() {
       }
     }
   }, [syntheticConfig.enabled]);
+
+  // Reset provider when engine type changes
+  useEffect(() => {
+    if (currentEngineType && currentEngineType !== syntheticConfig.ttsEngine) {
+      ttsProvider = null;
+      webSpeechProvider = null;
+      currentEngineType = null;
+      clearSyntheticCache();
+      if (scheduler) scheduler.reset();
+    }
+  }, [syntheticConfig.ttsEngine]);
 
   // Track playhead position for priority scheduling
   useEffect(() => {
@@ -146,7 +196,9 @@ export function useSyntheticLayerSync() {
     debounceRef.current = setTimeout(() => {
       regenerateStaleChunks(
         chunks, words, mappings, sections,
+        syntheticConfig.ttsEngine,
         syntheticConfig.voiceId, syntheticConfig.headTtsSpeed,
+        syntheticConfig.elevenLabsModelId,
         generatingRef,
         documentExpressivity,
       );
@@ -156,7 +208,9 @@ export function useSyntheticLayerSync() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [
-    syntheticConfig.enabled, syntheticConfig.voiceId, syntheticConfig.headTtsSpeed,
+    syntheticConfig.enabled, syntheticConfig.ttsEngine,
+    syntheticConfig.voiceId, syntheticConfig.headTtsSpeed,
+    syntheticConfig.elevenLabsModelId,
     words, mappings, chunks, sections, documentExpressivity,
   ]);
 }
@@ -170,8 +224,10 @@ async function regenerateStaleChunks(
   words: TranscribedWord[],
   mappings: WordChunkMapping[],
   sections: Section[],
+  engine: SyntheticTtsEngine,
   voiceId: string,
   headTtsSpeed: number,
+  elevenLabsModelId: string,
   generatingRef: React.MutableRefObject<boolean>,
   expressivityMap?: Record<string, ChunkExpressivity>,
 ) {
@@ -208,7 +264,7 @@ async function regenerateStaleChunks(
       return;
     }
 
-    console.log(`[SyntheticSync] ${staleChunkJobs.length} stale chunks to regenerate`);
+    console.log(`[SyntheticSync] ${staleChunkJobs.length} stale chunks to regenerate (engine: ${engine})`);
 
     // Invalidate stale entries — marks them 'pending' in chunk statuses
     // so the ProcessingPanel can show them immediately
@@ -232,7 +288,7 @@ async function regenerateStaleChunks(
 
     let provider;
     try {
-      provider = await getOrCreateProvider(audioContext, voiceId, headTtsSpeed);
+      provider = await getOrCreateProvider(engine, audioContext, voiceId, headTtsSpeed, elevenLabsModelId);
     } catch (err) {
       // Mark all queued chunks as error so the panel shows the failure
       for (const job of staleChunkJobs) {
@@ -296,8 +352,25 @@ function updateSyntheticEngineBuffers(chunks: Chunk[], sections: Section[]) {
   synEngine.setBuffers(bufferMap);
   synEngine.setChunks(syntheticChunks, sections);
 
+  // Update chunk waveformData from synthetic audio buffers
+  // so waveform display works even for text-only document imports
+  const store = useProjectStore.getState();
+  for (const chunk of chunks) {
+    const cached = cache.get(chunk.id);
+    if (!cached) continue;
+
+    // Skip if chunk already has waveform data from primary audio
+    const existing = store.project.chunks.find(c => c.id === chunk.id);
+    if (existing?.waveformData && existing.waveformData.length > 0) continue;
+
+    const buf = cached.audioBuffer;
+    const channelData = buf.getChannelData(0);
+    const peaks = computeWaveformPeaks(channelData, buf.sampleRate, 0, buf.duration, 100);
+    store.updateChunk(chunk.id, { waveformData: peaks });
+  }
+
   // If the primary engine is currently playing, sync the synthetic engine
-  const state = useProjectStore.getState();
+  const state = store;
   if (state.playback.isPlaying && syntheticChunks.length > 0) {
     const currentChunkId = state.playback.currentChunkId;
     if (currentChunkId) {

@@ -8,6 +8,11 @@
 
 import { timeStretchRegion } from './timeStretch';
 
+// Import the .wasm binary as a Vite URL asset so it gets properly
+// fingerprinted and served, rather than relying on import.meta.url
+// resolution inside the bundled Emscripten JS (which fails in Vite).
+import sonicWasmUrl from '@echogarden/sonic-wasm/sonic.wasm?url';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let sonicModule: any = null;
 let sonicReady = false;
@@ -21,7 +26,12 @@ export async function initSonic(): Promise<void> {
   sonicInitPromise = (async () => {
     try {
       const SonicFactory = (await import('@echogarden/sonic-wasm')).default;
-      sonicModule = await SonicFactory();
+      sonicModule = await SonicFactory({
+        locateFile: (path: string) => {
+          if (path.endsWith('.wasm')) return sonicWasmUrl;
+          return path;
+        },
+      });
       sonicReady = true;
       console.log('Sonic WASM initialized');
     } catch (err) {

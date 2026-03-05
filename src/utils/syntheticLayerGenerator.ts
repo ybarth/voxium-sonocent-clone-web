@@ -6,7 +6,8 @@
 
 import type { Chunk } from '../types';
 import type { TranscribedWord, WordChunkMapping } from '../types/transcription';
-import type { HeadTtsProvider, TtsWordTimestamp, HeadTtsInputItem } from './headTtsProvider';
+import type { SyntheticTtsProvider, TtsWordTimestamp } from './syntheticTtsProvider';
+import type { HeadTtsInputItem } from './headTtsProvider';
 import type { ChunkExpressivity } from '../types/document';
 import { stretchSynthetic, adjustTimestamps } from './sonicStretcher';
 import { getWordsForChunk } from './wordChunkMapper';
@@ -68,7 +69,7 @@ export { setStatus as setChunkStatus };
 export async function generateSyntheticForChunk(
   chunkId: string,
   text: string,
-  provider: HeadTtsProvider,
+  provider: SyntheticTtsProvider,
   audioContext: AudioContext,
   targetDuration: number, // desired duration in seconds (matches original chunk)
   headTtsSpeed: number,
@@ -165,7 +166,7 @@ export async function generateAllSynthetic(
   chunks: Chunk[],
   words: TranscribedWord[],
   mappings: WordChunkMapping[],
-  provider: HeadTtsProvider,
+  provider: SyntheticTtsProvider,
   audioContext: AudioContext,
   headTtsSpeed: number,
   concurrency = 3,

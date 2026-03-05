@@ -4,7 +4,7 @@
  * Provides progress tracking with ETA estimation.
  */
 
-import type { HeadTtsProvider } from './headTtsProvider';
+import type { SyntheticTtsProvider } from './syntheticTtsProvider';
 import type { ChunkExpressivity } from '../types/document';
 import { generateSyntheticForChunk } from './syntheticLayerGenerator';
 
@@ -156,7 +156,7 @@ export class SmartTtsScheduler {
   // ─── Execution ──────────────────────────────────────────────────────
 
   async start(
-    provider: HeadTtsProvider,
+    provider: SyntheticTtsProvider,
     audioContext: AudioContext,
     speed: number,
   ) {
@@ -174,7 +174,7 @@ export class SmartTtsScheduler {
   }
 
   private async _worker(
-    provider: HeadTtsProvider,
+    provider: SyntheticTtsProvider,
     audioContext: AudioContext,
     speed: number,
   ) {

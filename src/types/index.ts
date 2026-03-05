@@ -97,6 +97,7 @@ export interface TtsConfig {
 // ─── Synthetic TTS layer types ──────────────────────────────────────────────
 
 export type SyntheticLayerMixMode = 'solo-primary' | 'solo-synthetic' | 'mix' | 'stereo-split';
+export type SyntheticTtsEngine = 'kokoro' | 'elevenlabs' | 'qwen';
 
 export interface SyntheticLayerConfig {
   enabled: boolean;
@@ -106,9 +107,11 @@ export interface SyntheticLayerConfig {
   primaryPan: number;          // -1 (left) to 1 (right), used in stereo-split
   syntheticPan: number;        // -1 to 1, used in stereo-split
   primaryDuckLevel: number;    // 0-1, used in mix mode (how much to reduce primary)
-  voiceId: string;             // HeadTTS Kokoro voice
+  ttsEngine: SyntheticTtsEngine; // which TTS engine to use
+  voiceId: string;             // engine-specific voice ID
   headTtsSpeed: number;        // native generation speed (1.0-2.0)
   autoRegenerate: boolean;     // auto-regen when transcription text changes
+  elevenLabsModelId: string;   // ElevenLabs model ID
 }
 
 export const DEFAULT_SYNTHETIC_LAYER_CONFIG: SyntheticLayerConfig = {
@@ -119,9 +122,11 @@ export const DEFAULT_SYNTHETIC_LAYER_CONFIG: SyntheticLayerConfig = {
   primaryPan: -0.8,
   syntheticPan: 0.8,
   primaryDuckLevel: 0.3,
+  ttsEngine: 'kokoro',
   voiceId: 'af_bella',
   headTtsSpeed: 1.0,
   autoRegenerate: true,
+  elevenLabsModelId: 'eleven_multilingual_v2',
 };
 
 // ─── Chunk number style presets ──────────────────────────────────────────────

@@ -1,12 +1,15 @@
 /**
  * SyntheticLayerControls — popover/panel for configuring the TTS synthetic layer.
- * Controls: toggle, mix mode, volume, duck level, pan, voice, regenerate.
+ * Controls: toggle, TTS engine, mix mode, volume, duck level, pan, voice, regenerate.
  */
 
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
-import type { SyntheticLayerMixMode } from '../../types';
+import type { SyntheticLayerMixMode, SyntheticTtsEngine } from '../../types';
 import { KOKORO_VOICES } from '../../utils/headTtsProvider';
+import { ELEVENLABS_VOICES, ELEVENLABS_MODELS } from '../../utils/elevenLabsTtsProvider';
+import { QWEN_VOICES } from '../../utils/qwenTtsProvider';
+import { hasElevenLabsApiKey } from '../../utils/elevenLabsApi';
 import { getAllChunkStatuses, onStatusChange, clearSyntheticCache } from '../../utils/syntheticLayerGenerator';
 
 const MIX_MODE_LABELS: Record<SyntheticLayerMixMode, string> = {
@@ -14,6 +17,18 @@ const MIX_MODE_LABELS: Record<SyntheticLayerMixMode, string> = {
   'solo-synthetic': 'Solo Synthetic',
   'mix': 'Mix',
   'stereo-split': 'Stereo Split',
+};
+
+const ENGINE_LABELS: Record<SyntheticTtsEngine, string> = {
+  'kokoro': 'Kokoro (In-Browser)',
+  'elevenlabs': 'ElevenLabs',
+  'qwen': 'Qwen TTS (CosyVoice)',
+};
+
+const ENGINE_DESCRIPTIONS: Record<SyntheticTtsEngine, string> = {
+  'kokoro': 'High-quality in-browser TTS via Kokoro-82M. Pre-generates audio buffers with word-level timestamps.',
+  'elevenlabs': 'Premium cloud TTS via ElevenLabs API. Requires API key. Natural-sounding voices.',
+  'qwen': 'Alibaba CosyVoice model via Hugging Face. Requires HF API token.',
 };
 
 interface SyntheticLayerControlsProps {
@@ -51,8 +66,26 @@ export function SyntheticLayerControls({ onClose }: SyntheticLayerControlsProps)
 
   const handleRegenerate = useCallback(() => {
     clearSyntheticCache();
-    // The useSyntheticLayerSync hook will detect empty cache and regenerate
   }, []);
+
+  // When engine changes, reset voice to a sensible default
+  const handleEngineChange = useCallback((engine: SyntheticTtsEngine) => {
+    const updates: Partial<typeof config> = { ttsEngine: engine };
+
+    switch (engine) {
+      case 'kokoro':
+        updates.voiceId = 'af_bella';
+        break;
+      case 'elevenlabs':
+        updates.voiceId = ELEVENLABS_VOICES[0].id;
+        break;
+      case 'qwen':
+        updates.voiceId = QWEN_VOICES[0].id;
+        break;
+    }
+
+    updateConfig(updates);
+  }, [updateConfig]);
 
   return (
     <div
@@ -60,7 +93,7 @@ export function SyntheticLayerControls({ onClose }: SyntheticLayerControlsProps)
         position: 'fixed',
         top: 60,
         right: 16,
-        width: 320,
+        width: 340,
         backgroundColor: '#1e1e2e',
         border: '1px solid #3a3a5c',
         borderRadius: 12,
@@ -69,6 +102,8 @@ export function SyntheticLayerControls({ onClose }: SyntheticLayerControlsProps)
         color: '#e0e0f0',
         fontSize: 13,
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+        maxHeight: 'calc(100vh - 80px)',
+        overflowY: 'auto',
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -105,6 +140,32 @@ export function SyntheticLayerControls({ onClose }: SyntheticLayerControlsProps)
 
       {config.enabled && (
         <>
+          {/* TTS Engine Selector */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: '#999', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              TTS Engine
+            </div>
+            <select
+              value={config.ttsEngine}
+              onChange={e => handleEngineChange(e.target.value as SyntheticTtsEngine)}
+              style={selectStyle}
+            >
+              {(Object.keys(ENGINE_LABELS) as SyntheticTtsEngine[]).map(engine => (
+                <option key={engine} value={engine}>{ENGINE_LABELS[engine]}</option>
+              ))}
+            </select>
+            <div style={{ fontSize: 11, color: '#777', marginTop: 4, lineHeight: 1.4 }}>
+              {ENGINE_DESCRIPTIONS[config.ttsEngine]}
+            </div>
+
+            {/* Engine-specific warnings */}
+            {config.ttsEngine === 'elevenlabs' && !hasElevenLabsApiKey() && (
+              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                ElevenLabs API key not set. Configure it in Settings &gt; AI Configuration.
+              </div>
+            )}
+          </div>
+
           {/* Mix Mode */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: '#999', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -172,33 +233,66 @@ export function SyntheticLayerControls({ onClose }: SyntheticLayerControlsProps)
             </>
           )}
 
-          {/* Voice selector */}
+          {/* Voice selector — engine-specific */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: '#999', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Voice
             </div>
-            <select
-              value={config.voiceId}
-              onChange={e => updateConfig({ voiceId: e.target.value })}
-              style={{
-                width: '100%',
-                padding: '6px 8px',
-                backgroundColor: '#2a2a3e',
-                border: '1px solid #3a3a5c',
-                borderRadius: 6,
-                color: '#e0e0f0',
-                fontSize: 12,
-              }}
-            >
-              {KOKORO_VOICES.map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+            {config.ttsEngine === 'kokoro' && (
+              <select
+                value={config.voiceId}
+                onChange={e => updateConfig({ voiceId: e.target.value })}
+                style={selectStyle}
+              >
+                {KOKORO_VOICES.map(v => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            )}
+            {config.ttsEngine === 'elevenlabs' && (
+              <>
+                <select
+                  value={config.voiceId}
+                  onChange={e => updateConfig({ voiceId: e.target.value })}
+                  style={selectStyle}
+                >
+                  {ELEVENLABS_VOICES.map(v => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+                {/* Model selector */}
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: '#999', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Model
+                  </div>
+                  <select
+                    value={config.elevenLabsModelId}
+                    onChange={e => updateConfig({ elevenLabsModelId: e.target.value })}
+                    style={selectStyle}
+                  >
+                    {ELEVENLABS_MODELS.map(m => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            {config.ttsEngine === 'qwen' && (
+              <select
+                value={config.voiceId}
+                onChange={e => updateConfig({ voiceId: e.target.value })}
+                style={selectStyle}
+              >
+                {QWEN_VOICES.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* TTS Speed */}
           <SliderControl
-            label="TTS Generation Speed"
+            label="TTS Speed"
             value={config.headTtsSpeed}
             min={0.5}
             max={2.0}
@@ -267,6 +361,18 @@ export function SyntheticLayerControls({ onClose }: SyntheticLayerControlsProps)
     </div>
   );
 }
+
+// ─── Shared styles ──────────────────────────────────────────────────────────
+
+const selectStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '6px 8px',
+  backgroundColor: '#2a2a3e',
+  border: '1px solid #3a3a5c',
+  borderRadius: 6,
+  color: '#e0e0f0',
+  fontSize: 12,
+};
 
 // ─── Slider helper ──────────────────────────────────────────────────────────
 
