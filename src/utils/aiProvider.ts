@@ -15,7 +15,10 @@ export type TaskCategory =
   | 'transcription'
   | 'tts'
   | 'voice-cloning'
-  | 'division-suggestion';
+  | 'division-suggestion'
+  | 'document-section-division'
+  | 'document-chunk-division'
+  | 'document-expressivity';
 
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant';

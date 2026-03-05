@@ -56,6 +56,7 @@ export const ChunkBar = memo(function ChunkBar({
   const paintbrushActive = useProjectStore((s) => !!s.paintbrushMode);
   const checkSelectionMode = useProjectStore((s) => s.checkSelectionMode);
   const toggleCheckChunk = useProjectStore((s) => s.toggleCheckChunk);
+  const syntheticEnabled = useProjectStore((s) => s.project.settings.syntheticLayer.enabled);
   const classicMode = settings.classicMode;
   const visualMode = classicMode ? 'flat' as const : settings.visualMode;
   const numberDisplay = settings.chunkNumberDisplay;
@@ -334,6 +335,21 @@ export const ChunkBar = memo(function ChunkBar({
         />
       )}
 
+      {/* Synthetic layer overlay — purple tint + border */}
+      {syntheticEnabled && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            border: `${Math.max(1, 1.5 * zoomLevel)}px solid rgba(139, 92, 246, 0.5)`,
+            borderRadius: `${3 * zoomLevel}px`,
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
       {/* Waveform canvas (disabled in classic mode) */}
       {!classicMode && visualMode === 'waveform' && (
         <canvas
@@ -417,6 +433,29 @@ export const ChunkBar = memo(function ChunkBar({
           }}
         >
           {numberLabel}
+        </div>
+      )}
+
+      {/* Synthetic TTS badge */}
+      {syntheticEnabled && width > 30 * zoomLevel && (
+        <div
+          style={{
+            position: 'absolute',
+            top: `${1 * zoomLevel}px`,
+            right: checkSelectionMode ? `${20 * zoomLevel}px` : `${3 * zoomLevel}px`,
+            fontSize: `${Math.max(6, 8 * zoomLevel)}px`,
+            fontWeight: 700,
+            color: '#c4b5fd',
+            backgroundColor: 'rgba(139, 92, 246, 0.3)',
+            padding: `0 ${2 * zoomLevel}px`,
+            borderRadius: `${2 * zoomLevel}px`,
+            lineHeight: 1.4,
+            zIndex: 2,
+            pointerEvents: 'none',
+            letterSpacing: 0.5,
+          }}
+        >
+          TTS
         </div>
       )}
 

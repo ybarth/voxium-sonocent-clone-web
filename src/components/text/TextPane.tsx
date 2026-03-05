@@ -7,6 +7,7 @@ import { ClarificationPanel } from './ClarificationPanel';
 import { AlternativesPopover } from './AlternativesPopover';
 import { TextContextMenu } from './TextContextMenu';
 import { useTranscriptionSync } from '../../hooks/useTranscriptionSync';
+import { usePlayback } from '../../hooks/usePlayback';
 import { useProjectStore, getOrderedChunks } from '../../stores/projectStore';
 import { extractChunkAudio, getChunkOffsets } from '../../utils/audioExtractor';
 import { transcribe } from '../../utils/transcriptionEngine';
@@ -25,6 +26,7 @@ export function TextPane() {
   const [alternativesPopover, setAlternativesPopover] = useState<PopoverState | null>(null);
   const [showChunkBorders, setShowChunkBorders] = useState(false);
   const { activeWordId, highlightedWordIds } = useTranscriptionSync();
+  const { seekToChunk } = usePlayback();
   const classicMode = useProjectStore(s => s.project.settings.classicMode);
 
   const handleTranscribe = useCallback(async (scope: TranscriptionScope) => {
@@ -182,9 +184,14 @@ export function TextPane() {
     const mappings = state.project.transcription.wordChunkMappings;
     const mapping = mappings.find(m => m.wordId === wordId && m.chunkId === chunkId);
     if (mapping) {
+      state.selectChunk(chunkId, 'replace');
       state.placeCursorInChunk(chunkId, mapping.startFraction);
+      const chunk = state.project.chunks.find(c => c.id === chunkId);
+      if (chunk) {
+        seekToChunk(chunkId, (chunk.endTime - chunk.startTime) * mapping.startFraction);
+      }
     }
-  }, []);
+  }, [seekToChunk]);
 
   const handleWordContextMenu = useCallback((e: React.MouseEvent, wordId: string) => {
     setContextMenu({ wordId, x: e.clientX, y: e.clientY });

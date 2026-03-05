@@ -94,6 +94,24 @@ const DEFAULT_RULES: RoutingRule[] = [
     fallbackProvider: 'openai', fallbackModel: 'gpt-4o-mini',
     requiredCapabilities: ['reasoning'],
   },
+  {
+    taskCategory: 'document-section-division',
+    primaryProvider: 'claude', primaryModel: 'claude-haiku-4-5-20251001',
+    fallbackProvider: 'openai', fallbackModel: 'gpt-4o-mini',
+    requiredCapabilities: ['reasoning'],
+  },
+  {
+    taskCategory: 'document-chunk-division',
+    primaryProvider: 'claude', primaryModel: 'claude-haiku-4-5-20251001',
+    fallbackProvider: 'openai', fallbackModel: 'gpt-4o-mini',
+    requiredCapabilities: ['reasoning'],
+  },
+  {
+    taskCategory: 'document-expressivity',
+    primaryProvider: 'openai', primaryModel: 'gpt-4o-mini',
+    fallbackProvider: 'claude', fallbackModel: 'claude-haiku-4-5-20251001',
+    requiredCapabilities: ['reasoning'],
+  },
 ];
 
 // ─── Router Singleton ───────────────────────────────────────────────────────

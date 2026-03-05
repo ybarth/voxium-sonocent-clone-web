@@ -10,6 +10,7 @@ import { AudioPane } from '../audio/AudioPane';
 import { PlaceholderPane } from './PlaceholderPane';
 import { PaneWrapper } from './PaneWrapper';
 import { TextPane } from '../text/TextPane';
+import { FilePane } from './FilePane';
 import { ConfigurationPanel } from '../configuration/ConfigurationPanel';
 import { useProjectStore } from '../../stores/projectStore';
 import { useLayoutStore } from '../../stores/layoutStore';
@@ -51,11 +52,7 @@ function AnnotationsPanel(_props: IDockviewPanelProps) {
 function FilePanel(_props: IDockviewPanelProps) {
   return (
     <PaneWrapper paneId="file">
-      <PlaceholderPane
-        title="File Pane"
-        description="PDF & Markdown viewer with cross-pane linking"
-        icon="📄"
-      />
+      <FilePane />
     </PaneWrapper>
   );
 }

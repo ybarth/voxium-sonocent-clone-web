@@ -52,6 +52,8 @@ interface PlaybackState {
   recordingHead: InsertionPoint | null;
   /** When non-null, chunks are painted this color as the cursor passes through them during playback */
   paintingColor: string | null;
+  /** Which layer drives cursor/highlighting */
+  activeLayer: 'primary' | 'synthetic';
 }
 
 interface SelectionState {
@@ -210,6 +212,11 @@ interface ProjectStore {
   // Phase 2: TTS
   setTtsConfig: (partial: Partial<TtsConfig>) => void;
 
+  // Synthetic TTS layer
+  setSyntheticLayerEnabled: (enabled: boolean) => void;
+  updateSyntheticLayerConfig: (partial: Partial<import('../types').SyntheticLayerConfig>) => void;
+  setSyntheticMixMode: (mode: import('../types').SyntheticLayerMixMode) => void;
+
   // Phase 2: Templates
   createTemplate: (name: string) => void;
   updateTemplate: (id: string, updates: Partial<ColorKeyTemplate>) => void;
@@ -341,6 +348,15 @@ interface ProjectStore {
   updateDivisionPreset: (id: string, updates: Partial<DivisionPreset>) => void;
   deleteDivisionPreset: (id: string) => void;
 
+  // Phase 7+: Document Import
+  addDocumentAsset: (asset: import('../types/document').DocumentAsset) => void;
+  updateDocumentAsset: (id: string, updates: Partial<import('../types/document').DocumentAsset>) => void;
+  removeDocumentAsset: (id: string) => void;
+  addDocumentImportJob: (job: import('../types/document').DocumentImportJob) => void;
+  updateDocumentImportJob: (jobId: string, updates: Partial<import('../types/document').DocumentImportJob>) => void;
+  setChunkExpressivity: (chunkId: string, expressivity: import('../types/document').ChunkExpressivity) => void;
+  setChunkExpressivityBatch: (entries: Record<string, import('../types/document').ChunkExpressivity>) => void;
+
   pushUndo: (type: UndoAction['type'], clipboardSnapshot?: import('../types/clipboard').ClipboardItem[]) => void;
   undo: () => void;
   redo: () => void;
@@ -402,6 +418,9 @@ const initialProject: Project = {
   transcription: { ...DEFAULT_TRANSCRIPTION_STATE },
   sectionConfigs: {},
   divisionPresets: [...ALL_BUILTIN_PRESETS],
+  documentAssets: [],
+  documentImportJobs: [],
+  documentExpressivity: {},
   undoStack: [],
   redoStack: [],
 };
@@ -441,6 +460,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     insertionPoint: null,
     recordingHead: null,
     paintingColor: null,
+    activeLayer: 'primary',
   },
 
   take: { chunkIds: [], originalPosition: null, moved: false },
@@ -2142,6 +2162,81 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       };
     }),
 
+  // ─── Phase 7+: Document Import ─────────────────────────────────────────────
+
+  addDocumentAsset: (asset) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentAssets: [...s.project.documentAssets, asset],
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateDocumentAsset: (id, updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentAssets: s.project.documentAssets.map((a) =>
+          a.id === id ? { ...a, ...updates } : a
+        ),
+        updatedAt: new Date(),
+      },
+    })),
+
+  removeDocumentAsset: (id) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentAssets: s.project.documentAssets.filter((a) => a.id !== id),
+        updatedAt: new Date(),
+      },
+    })),
+
+  addDocumentImportJob: (job) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentImportJobs: [...s.project.documentImportJobs, job],
+        updatedAt: new Date(),
+      },
+    })),
+
+  updateDocumentImportJob: (jobId, updates) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentImportJobs: s.project.documentImportJobs.map((j) =>
+          j.id === jobId ? { ...j, ...updates } : j
+        ),
+        updatedAt: new Date(),
+      },
+    })),
+
+  setChunkExpressivity: (chunkId, expressivity) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentExpressivity: {
+          ...s.project.documentExpressivity,
+          [chunkId]: expressivity,
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
+  setChunkExpressivityBatch: (entries) =>
+    set((s) => ({
+      project: {
+        ...s.project,
+        documentExpressivity: {
+          ...s.project.documentExpressivity,
+          ...entries,
+        },
+        updatedAt: new Date(),
+      },
+    })),
+
   pushUndo: (type, clipboardSnapshot?) =>
     set((s) => {
       const isConfigAction = type === 'apply-configuration' || type === 'switch-version' || type === 'switch-configuration';
@@ -2519,6 +2614,54 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           ...s.project.settings,
           ttsConfig: migrateTtsConfig({ ...s.project.settings.ttsConfig, ...partial }),
         },
+      },
+    }));
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Synthetic TTS layer
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  setSyntheticLayerEnabled: (enabled) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          syntheticLayer: { ...s.project.settings.syntheticLayer, enabled },
+        },
+      },
+      playback: {
+        ...s.playback,
+        activeLayer: enabled ? 'synthetic' : 'primary',
+      },
+    }));
+  },
+
+  updateSyntheticLayerConfig: (partial) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          syntheticLayer: { ...s.project.settings.syntheticLayer, ...partial },
+        },
+      },
+    }));
+  },
+
+  setSyntheticMixMode: (mode) => {
+    set((s) => ({
+      project: {
+        ...s.project,
+        settings: {
+          ...s.project.settings,
+          syntheticLayer: { ...s.project.settings.syntheticLayer, mixMode: mode },
+        },
+      },
+      playback: {
+        ...s.playback,
+        activeLayer: mode === 'solo-primary' ? 'primary' : (mode === 'solo-synthetic' ? 'synthetic' : s.playback.activeLayer),
       },
     }));
   },

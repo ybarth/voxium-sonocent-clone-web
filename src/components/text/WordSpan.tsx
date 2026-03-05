@@ -38,7 +38,7 @@ export const WordSpan = memo(function WordSpan({
   // Determine background color based on view mode
   let backgroundColor = 'transparent';
   if (viewMode === 'confidence') {
-    const effectiveConfidence = word.contextualConfidence > 0
+    const effectiveConfidence = (word.contextualConfidence ?? 0) > 0
       ? word.contextualConfidence
       : word.confidence;
     const level: ConfidenceLevel = getConfidenceLevel(effectiveConfidence, settings);
@@ -61,7 +61,7 @@ export const WordSpan = memo(function WordSpan({
     : {};
 
   // Low confidence underline
-  const hasFlag = word.flags.length > 0;
+  const hasFlag = (word.flags?.length ?? 0) > 0;
   const textDecoration = hasFlag ? 'underline wavy rgba(245, 158, 11, 0.6)' : 'none';
 
   return (

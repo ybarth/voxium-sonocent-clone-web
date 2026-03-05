@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Panel,
   Group as PanelGroup,
@@ -8,6 +8,7 @@ import {
 import { SchemeSidebar } from '../sidebar/SchemeSidebar';
 import { Toolbar } from '../toolbar/Toolbar';
 import { StatusBar } from './StatusBar';
+import { ProcessingPanel } from './ProcessingPanel';
 import { DockviewLayout } from './DockviewLayout';
 import { useLayoutStore } from '../../stores/layoutStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -17,6 +18,8 @@ export function AppLayout() {
   const setSidebarPanelApi = useLayoutStore((s) => s.setSidebarPanelApi);
   const setSidebarCollapsed = useLayoutStore((s) => s.setSidebarCollapsed);
   const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+  const [processingExpanded, setProcessingExpanded] = useState(true);
+  const toggleProcessing = useCallback(() => setProcessingExpanded(p => !p), []);
 
   // Toggle body class for global CSS overrides
   useEffect(() => {
@@ -90,7 +93,10 @@ export function AppLayout() {
         </Panel>
       </PanelGroup>
 
-      <StatusBar />
+      <div style={{ position: 'relative' }}>
+        <ProcessingPanel expanded={processingExpanded} onToggle={toggleProcessing} />
+        <StatusBar onToggleProcessing={toggleProcessing} processingExpanded={processingExpanded} />
+      </div>
     </div>
   );
 }

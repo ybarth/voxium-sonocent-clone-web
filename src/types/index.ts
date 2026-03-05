@@ -8,6 +8,7 @@ import type { ClipboardItem } from './clipboard';
 import type { TranscriptionState } from './transcription';
 import { DEFAULT_TRANSCRIPTION_STATE } from './transcription';
 import type { SectionConfigState, DivisionPreset } from './configuration';
+import type { DocumentAsset, DocumentImportJob, ChunkExpressivity } from './document';
 
 // ─── Texture types ───────────────────────────────────────────────────────────
 
@@ -93,6 +94,36 @@ export interface TtsConfig {
   duckLevel: number; // 0-1, how much to reduce main audio during TTS
 }
 
+// ─── Synthetic TTS layer types ──────────────────────────────────────────────
+
+export type SyntheticLayerMixMode = 'solo-primary' | 'solo-synthetic' | 'mix' | 'stereo-split';
+
+export interface SyntheticLayerConfig {
+  enabled: boolean;
+  volume: number;              // 0-1
+  muted: boolean;
+  mixMode: SyntheticLayerMixMode;
+  primaryPan: number;          // -1 (left) to 1 (right), used in stereo-split
+  syntheticPan: number;        // -1 to 1, used in stereo-split
+  primaryDuckLevel: number;    // 0-1, used in mix mode (how much to reduce primary)
+  voiceId: string;             // HeadTTS Kokoro voice
+  headTtsSpeed: number;        // native generation speed (1.0-2.0)
+  autoRegenerate: boolean;     // auto-regen when transcription text changes
+}
+
+export const DEFAULT_SYNTHETIC_LAYER_CONFIG: SyntheticLayerConfig = {
+  enabled: false,
+  volume: 1.0,
+  muted: false,
+  mixMode: 'solo-synthetic',
+  primaryPan: -0.8,
+  syntheticPan: 0.8,
+  primaryDuckLevel: 0.3,
+  voiceId: 'af_bella',
+  headTtsSpeed: 1.0,
+  autoRegenerate: true,
+};
+
 // ─── Chunk number style presets ──────────────────────────────────────────────
 
 export type ChunkNumberPresetId = 'default' | 'badge' | 'monospace' | 'minimal' | 'outlined' | 'large';
@@ -164,6 +195,10 @@ export interface Project {
   // Phase 6: Configurations
   sectionConfigs: Record<string, SectionConfigState>;
   divisionPresets: DivisionPreset[];
+  // Phase 7+: Document import
+  documentAssets: DocumentAsset[];
+  documentImportJobs: DocumentImportJob[];
+  documentExpressivity: Record<string, ChunkExpressivity>;
   undoStack: UndoAction[];
   redoStack: UndoAction[];
 }
@@ -241,6 +276,8 @@ export interface ProjectSettings {
   classicMode: boolean;
   // Loop playback over selection or full document
   loopMode: boolean;
+  // Synthetic TTS layer
+  syntheticLayer: SyntheticLayerConfig;
 }
 
 export interface InsertionPoint {
@@ -298,7 +335,9 @@ export type UndoActionType =
   // Phase 6: Configurations
   | 'apply-configuration'
   | 'switch-version'
-  | 'switch-configuration';
+  | 'switch-configuration'
+  // Phase 7+: Document import
+  | 'import-document';
 
 export interface UndoAction {
   type: UndoActionType;
@@ -383,4 +422,5 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   defaultAttributes: DEFAULT_FORM_ATTRIBUTES,
   classicMode: false,
   loopMode: false,
+  syntheticLayer: DEFAULT_SYNTHETIC_LAYER_CONFIG,
 };

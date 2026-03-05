@@ -5,12 +5,18 @@ import { TtsEngine, getTtsText, getSectionTtsText } from '../utils/ttsEngine';
 import { resolveChunkForm, resolveSectionForm } from '../utils/formResolver';
 import { useProjectStore } from '../stores/projectStore';
 import { getFlatSectionOrder } from '../utils/sectionTree';
+import type { SyntheticLayerMixMode } from '../types';
 
 // Module-level singleton engines — shared across all components
 let engineInstance: PlaybackEngine | null = null;
 let sfxEngineInstance: SfxEngine | null = null;
 let ttsEngineInstance: TtsEngine | null = null;
 let engineCallbacksBound = false;
+
+// Synthetic layer singletons
+let syntheticEngineInstance: PlaybackEngine | null = null;
+let syntheticPanNode: StereoPannerNode | null = null;
+let primaryPanNode: StereoPannerNode | null = null;
 
 // Track section transitions for TTS announcements
 let lastPlayedSectionId: string | null = null;
@@ -19,6 +25,13 @@ function getOrCreateEngine(): PlaybackEngine {
   if (!engineInstance) {
     const ctx = useProjectStore.getState().initAudioContext();
     engineInstance = new PlaybackEngine(ctx);
+
+    // Insert pan node between primary engine gain and destination
+    primaryPanNode = ctx.createStereoPanner();
+    primaryPanNode.pan.value = 0;
+    engineInstance.mainGainNode.disconnect();
+    engineInstance.mainGainNode.connect(primaryPanNode);
+    primaryPanNode.connect(ctx.destination);
 
     // Also create the SFX engine on the same context
     sfxEngineInstance = new SfxEngine(ctx);
@@ -226,6 +239,114 @@ function getOrCreateEngine(): PlaybackEngine {
 }
 
 /**
+ * Get or create the synthetic engine for TTS layer playback.
+ * Uses the same AudioContext as the primary engine.
+ */
+function getOrCreateSyntheticEngine(): PlaybackEngine {
+  if (!syntheticEngineInstance) {
+    const ctx = useProjectStore.getState().initAudioContext();
+    syntheticEngineInstance = new PlaybackEngine(ctx);
+
+    // Insert pan node between synthetic engine gain and destination
+    syntheticPanNode = ctx.createStereoPanner();
+    syntheticPanNode.pan.value = 0;
+    syntheticEngineInstance.mainGainNode.disconnect();
+    syntheticEngineInstance.mainGainNode.connect(syntheticPanNode);
+    syntheticPanNode.connect(ctx.destination);
+
+    // No SFX/TTS announcement callbacks — synthetic is audio-only
+  }
+  return syntheticEngineInstance;
+}
+
+/** Expose the synthetic engine instance for external sync hooks */
+export function getSyntheticEngine(): PlaybackEngine | null {
+  return syntheticEngineInstance;
+}
+
+/** Expose pan nodes for external control */
+export function getPanNodes(): { primary: StereoPannerNode | null; synthetic: StereoPannerNode | null } {
+  return { primary: primaryPanNode, synthetic: syntheticPanNode };
+}
+
+/**
+ * Apply mix mode routing: adjusts volumes and pan values based on the current mode.
+ */
+export function applyMixMode(mode: SyntheticLayerMixMode, config: {
+  primaryVolume: number;
+  syntheticVolume: number;
+  primaryPan: number;
+  syntheticPan: number;
+  primaryDuckLevel: number;
+  syntheticMuted: boolean;
+}) {
+  const primaryEngine = engineInstance;
+  const syntheticEngine = syntheticEngineInstance;
+  const ctx = primaryEngine?.mainGainNode?.context;
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  switch (mode) {
+    case 'solo-primary':
+      primaryEngine?.setVolume(config.primaryVolume);
+      syntheticEngine?.setVolume(0);
+      if (primaryPanNode) primaryPanNode.pan.setValueAtTime(0, now);
+      if (syntheticPanNode) syntheticPanNode.pan.setValueAtTime(0, now);
+      break;
+
+    case 'solo-synthetic':
+      primaryEngine?.setVolume(0);
+      syntheticEngine?.setVolume(config.syntheticMuted ? 0 : config.syntheticVolume);
+      if (primaryPanNode) primaryPanNode.pan.setValueAtTime(0, now);
+      if (syntheticPanNode) syntheticPanNode.pan.setValueAtTime(0, now);
+      break;
+
+    case 'mix':
+      primaryEngine?.setVolume(config.primaryVolume * (1 - config.primaryDuckLevel));
+      syntheticEngine?.setVolume(config.syntheticMuted ? 0 : config.syntheticVolume);
+      if (primaryPanNode) primaryPanNode.pan.setValueAtTime(0, now);
+      if (syntheticPanNode) syntheticPanNode.pan.setValueAtTime(0, now);
+      break;
+
+    case 'stereo-split':
+      primaryEngine?.setVolume(config.primaryVolume);
+      syntheticEngine?.setVolume(config.syntheticMuted ? 0 : config.syntheticVolume);
+      if (primaryPanNode) primaryPanNode.pan.setValueAtTime(config.primaryPan, now);
+      if (syntheticPanNode) syntheticPanNode.pan.setValueAtTime(config.syntheticPan, now);
+      break;
+  }
+}
+
+/**
+ * Sync synthetic engine playback state with primary engine.
+ * Primary is leader; synthetic follows.
+ */
+function syncSyntheticToAction(action: 'play' | 'pause' | 'stop') {
+  const synEngine = syntheticEngineInstance;
+  if (!synEngine) return;
+
+  const syntheticEnabled = useProjectStore.getState().project.settings.syntheticLayer.enabled;
+  if (!syntheticEnabled) return;
+
+  switch (action) {
+    case 'play': synEngine.play(); break;
+    case 'pause': synEngine.pause(); break;
+    case 'stop': synEngine.stop(); break;
+  }
+}
+
+function syncSyntheticSeek(chunkId: string, offset: number) {
+  const synEngine = syntheticEngineInstance;
+  if (!synEngine) return;
+
+  const syntheticEnabled = useProjectStore.getState().project.settings.syntheticLayer.enabled;
+  if (!syntheticEnabled) return;
+
+  // Seek synthetic to the same chunk (offset proportional to duration ratio)
+  synEngine.seekToChunk(chunkId, offset);
+}
+
+/**
  * Hook to sync playback engine with store state.
  * Call this ONCE in a top-level component (e.g., App or AppLayout).
  */
@@ -313,6 +434,58 @@ export function usePlaybackSync() {
       sfxEngineInstance.preloadMappings(sfxMappings);
     }
   }, [sfxMappings]);
+
+  // ─── Synthetic layer sync ─────────────────────────────────────────────────
+
+  const syntheticConfig = useProjectStore((s) => s.project.settings.syntheticLayer);
+
+  // Sync synthetic engine playback rate when speed changes
+  useEffect(() => {
+    if (!syntheticConfig.enabled || !syntheticEngineInstance) return;
+    syntheticEngineInstance.setPlaybackRate(playbackSpeed);
+  }, [playbackSpeed, syntheticConfig.enabled]);
+
+  // Sync synthetic engine loop state
+  useEffect(() => {
+    if (!syntheticConfig.enabled || !syntheticEngineInstance) return;
+    // Mirror loop settings from primary engine
+    const engine = getOrCreateEngine();
+    // The synthetic engine shares the same loop config
+    if (!loopMode) {
+      syntheticEngineInstance.setLoop(false);
+    }
+    // Loop sync handled by the primary engine's loop effect — same indices apply
+  }, [loopMode, syntheticConfig.enabled]);
+
+  // Sync mix mode and volume routing
+  useEffect(() => {
+    if (!syntheticConfig.enabled) {
+      // Reset primary to full volume and center pan when synthetic disabled
+      const engine = getOrCreateEngine();
+      engine.setVolume(volume);
+      if (primaryPanNode) {
+        const ctx = primaryPanNode.context;
+        primaryPanNode.pan.setValueAtTime(0, ctx.currentTime);
+      }
+      return;
+    }
+
+    // Ensure synthetic engine exists
+    getOrCreateSyntheticEngine();
+
+    applyMixMode(syntheticConfig.mixMode, {
+      primaryVolume: volume,
+      syntheticVolume: syntheticConfig.volume,
+      primaryPan: syntheticConfig.primaryPan,
+      syntheticPan: syntheticConfig.syntheticPan,
+      primaryDuckLevel: syntheticConfig.primaryDuckLevel,
+      syntheticMuted: syntheticConfig.muted,
+    });
+  }, [
+    syntheticConfig.enabled, syntheticConfig.mixMode, syntheticConfig.volume,
+    syntheticConfig.muted, syntheticConfig.primaryPan, syntheticConfig.syntheticPan,
+    syntheticConfig.primaryDuckLevel, volume,
+  ]);
 }
 
 /**
@@ -330,24 +503,28 @@ export function usePlayback() {
     const engine = getOrCreateEngine();
     engine.togglePlay();
     setPlaying(engine.playing);
+    syncSyntheticToAction(engine.playing ? 'play' : 'pause');
   }, [setPlaying]);
 
   const play = useCallback(() => {
     const engine = getOrCreateEngine();
     engine.play();
     setPlaying(true);
+    syncSyntheticToAction('play');
   }, [setPlaying]);
 
   const pause = useCallback(() => {
     const engine = getOrCreateEngine();
     engine.pause();
     setPlaying(false);
+    syncSyntheticToAction('pause');
   }, [setPlaying]);
 
   const stop = useCallback(() => {
     const engine = getOrCreateEngine();
     engine.stop();
     setPlaying(false);
+    syncSyntheticToAction('stop');
   }, [setPlaying]);
 
   const seekToChunk = useCallback(
@@ -355,6 +532,7 @@ export function usePlayback() {
       const engine = getOrCreateEngine();
       engine.seekToChunk(chunkId, offset);
       setCurrentChunk(chunkId);
+      syncSyntheticSeek(chunkId, offset);
     },
     [setCurrentChunk]
   );

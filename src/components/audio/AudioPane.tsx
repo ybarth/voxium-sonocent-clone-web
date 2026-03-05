@@ -11,6 +11,7 @@ import { importMultipleFiles } from '../../utils/importAudio';
 import { getFlatSectionOrder, hasCollapsedAncestor } from '../../utils/sectionTree';
 import { useModifierKeys, MODIFIER_MODE_META } from '../../hooks/useModifierKeys';
 import { useMarqueeSelection } from '../../hooks/useMarqueeSelection';
+import { SyntheticLayerControls } from './SyntheticLayerControls';
 
 interface ContextMenuState {
   x: number;
@@ -229,6 +230,9 @@ export function AudioPane() {
   }, [dragSectionId]);
 
   const classicMode = useProjectStore((s) => s.project.settings.classicMode);
+  const syntheticEnabled = useProjectStore((s) => s.project.settings.syntheticLayer.enabled);
+  const setSyntheticLayerEnabled = useProjectStore((s) => s.setSyntheticLayerEnabled);
+  const [syntheticControlsOpen, setSyntheticControlsOpen] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { marquee, onMouseDown: onMarqueeMouseDown } = useMarqueeSelection(scrollContainerRef);
@@ -339,6 +343,59 @@ export function AudioPane() {
           />
         )}
       </div>
+
+      {/* Synthetic layer toggle bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '4px 12px',
+          borderTop: '1px solid rgba(139,92,246,0.2)',
+          backgroundColor: syntheticEnabled ? 'rgba(139,92,246,0.08)' : 'transparent',
+          transition: 'background-color 0.2s',
+        }}
+      >
+        <button
+          onClick={() => setSyntheticLayerEnabled(!syntheticEnabled)}
+          title={syntheticEnabled ? 'Disable synthetic layer' : 'Enable synthetic layer'}
+          style={{
+            padding: '3px 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            border: syntheticEnabled ? '1px solid #8b5cf6' : '1px solid #3a3a5c',
+            borderRadius: 6,
+            backgroundColor: syntheticEnabled ? '#8b5cf620' : 'transparent',
+            color: syntheticEnabled ? '#c4b5fd' : '#888',
+            cursor: 'pointer',
+            letterSpacing: 0.3,
+          }}
+        >
+          TTS
+        </button>
+        {syntheticEnabled && (
+          <span style={{ fontSize: 11, color: '#c4b5fd' }}>Synthetic layer active</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setSyntheticControlsOpen(!syntheticControlsOpen)}
+          style={{
+            padding: '3px 8px',
+            fontSize: 11,
+            border: '1px solid #3a3a5c',
+            borderRadius: 6,
+            backgroundColor: 'transparent',
+            color: '#999',
+            cursor: 'pointer',
+          }}
+        >
+          Settings
+        </button>
+      </div>
+
+      {syntheticControlsOpen && (
+        <SyntheticLayerControls onClose={() => setSyntheticControlsOpen(false)} />
+      )}
 
       {/* Modifier mode indicator */}
       {modifierMode !== 'navigate' && (
